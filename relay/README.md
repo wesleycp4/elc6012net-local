@@ -21,5 +21,12 @@ sudo nft add rule ip nat prerouting iifname "wlp0s20f3" \
 Em segundos a central reconecta no relay. Comandos no terminal:
 `arm | disarm | shockon | shockoff | allon | alloff | status | raw <hex> | quit`.
 
+## Painel web (experimental)
+Adicione `--web 8080` para um painel local (botões + status) em `http://<ip>:8080`,
+útil inclusive para o teste de bancada:
+```bash
+python3 elc_local_relay.py --listen 0.0.0.0:9009 --web 8080
+```
+
 > Enquanto o relay roda, a central **não** fala com a Intelbras (sem notificações
 > pela nuvem deles). Teste com a cerca ciente disso.

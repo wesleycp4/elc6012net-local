@@ -20,7 +20,8 @@ Comandos no terminal (stdin): arm | disarm | shockon | shockoff | allon |
 NÃO É PRODUÇÃO: enquanto isto roda, a central não fala com a Intelbras
 (sem notificações pela nuvem deles). Teste com a cerca ciente disso.
 """
-import argparse, socket, sys, threading, time
+import argparse, json, socket, sys, threading, time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
 
 def xck(body: bytes) -> int:
@@ -67,6 +68,7 @@ class Relay:
         self.sock = None
         self.lock = threading.Lock()
         self.buf = b""
+        self.last_status = {}
 
     def send(self, session: bytes, payload: bytes):
         if not self.sock: 
@@ -94,6 +96,12 @@ class Relay:
         c = cmd.hex()
         if c == "0b4a":                      # resposta de status
             print(f"[STATUS] {decode_status(frame)}")
+            if len(frame) >= 164:
+                self.last_status = {
+                    "choque": bool(frame[30] & 1), "alarme": bool(frame[31] & 1),
+                    "zonas": frame[46:48].hex(), "disparo": frame[54:56].hex(),
+                    "bypass": frame[62:64].hex(),
+                    "ts": datetime.now().strftime("%H:%M:%S")}
         elif c == "10b2":                    # central reportando evento
             print(f"[EVENTO] {frame[8:].hex(' ')}")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
@@ -128,13 +136,75 @@ class Relay:
                 try: self.send(b"\x00\x00\x00\x01", CMD_MAP["status"])
                 except OSError: return
 
+
+PANEL_HTML = """<!doctype html><html lang=pt-br><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>ELC 6012 NET — relay local</title><style>
+:root{--bg:#0f1115;--fg:#e8eaed;--card:#1a1d24;--line:#2a2f3a;--on:#2e7d32;--off:#555;--red:#c62828}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
+font:16px/1.5 system-ui,sans-serif;padding:16px;max-width:560px;margin:auto}
+h1{font-size:20px}.row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+button{flex:1;min-width:120px;padding:14px;border:1px solid var(--line);border-radius:12px;
+background:var(--card);color:var(--fg);font-size:15px;cursor:pointer}button:active{opacity:.6}
+.st{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.st div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.b{font-weight:600}.on{color:#66bb6a}.off{color:#9aa0a8}small{color:#9aa0a8}
+</style></head><body><h1>Cerca elétrica — relay local</h1>
+<small id=ts>aguardando status…</small>
+<div class=row><button onclick=cmd('shockon')>⚡ Choque ON</button>
+<button onclick=cmd('shockoff')>Choque OFF</button></div>
+<div class=row><button onclick=cmd('arm')>🛡 Armar</button>
+<button onclick=cmd('disarm')>Desarmar</button></div>
+<div class=row><button onclick=cmd('allon')>Tudo ON</button>
+<button onclick=cmd('alloff')>Tudo OFF</button></div>
+<div class=st>
+<div>Choque <span class=b id=choque>—</span></div>
+<div>Alarme <span class=b id=alarme>—</span></div>
+<div>Zonas abertas <span class=b id=zonas>—</span></div>
+<div>Disparo <span class=b id=disparo>—</span></div></div>
+<script>
+async function cmd(c){await fetch('/cmd/'+c,{method:'POST'});setTimeout(upd,500)}
+async function upd(){try{let s=await(await fetch('/status')).json();
+document.getElementById('ts').textContent='último status '+(s.ts||'—');
+set('choque',s.choque);set('alarme',s.alarme);
+document.getElementById('zonas').textContent=s.zonas||'—';
+document.getElementById('disparo').textContent=s.disparo||'—';}catch(e){}}
+function set(id,v){let e=document.getElementById(id);e.textContent=v?'ON':'off';
+e.className='b '+(v?'on':'off')}
+upd();setInterval(upd,3000)
+</script></body></html>"""
+
+def start_web(relay, port):
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def _send(self, code, body, ctype="text/html"):
+            self.send_response(code); self.send_header("Content-Type", ctype)
+            self.end_headers(); self.wfile.write(body.encode())
+        def do_GET(self):
+            if self.path == "/status":
+                self._send(200, json.dumps(relay.last_status), "application/json")
+            else:
+                self._send(200, PANEL_HTML)
+        def do_POST(self):
+            name = self.path.rsplit("/", 1)[-1]
+            if name in CMD_MAP:
+                relay.send(b"\x00\x00\x00\x01", CMD_MAP[name]); self._send(200, "ok", "text/plain")
+            else:
+                self._send(404, "comando desconhecido", "text/plain")
+    httpd = HTTPServer(("0.0.0.0", port), H)
+    print(f"[web] painel em http://0.0.0.0:{port}")
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--listen", default="0.0.0.0:9009")
     ap.add_argument("--poll", type=int, default=15)
+    ap.add_argument("--web", type=int, default=0, help="porta do painel web (0 = desligado)")
     ns = ap.parse_args()
     host, port = ns.listen.rsplit(":", 1)
     r = Relay()
+    if ns.web:
+        start_web(r, ns.web)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((host, int(port))); srv.listen(1)

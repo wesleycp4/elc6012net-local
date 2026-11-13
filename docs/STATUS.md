@@ -4,6 +4,9 @@ Estado da engenharia reversa. **Contribuições são bem-vindas** — se você t
 ELC 6012 NET, pode rodar os testes abertos e mandar a captura (veja
 [CONTRIBUTING](../CONTRIBUTING.md)).
 
+> Trabalho ainda não validado ao vivo (painel web, modo HA local) fica na branch
+> **`experimental`**; ao validar, entra na `main`.
+
 Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 
 ## Controle / monitoração
@@ -37,7 +40,7 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Status + comando | 🟡 implementado, depende da sessão acima |
 | Bypass / PGM / config via relay | ⬜ depende dos testes acima |
 | Integração MQTT → Home Assistant local | ⬜ planejado |
-| Interface web | ⬜ planejado |
+| Interface web (painel no relay) | 🟡 implementada na branch `experimental`; falta validar ao vivo |
 
 ---
 
