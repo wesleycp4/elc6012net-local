@@ -1,0 +1,6 @@
+# Capturas podem conter SSID/senha de Wi-Fi e o MAC da central — nunca commitar.
+*.pcap
+*.pcapng
+captura*
+__pycache__/
+*.pyc

@@ -1,0 +1,149 @@
+# Protocolo ELC 6012 NET — central ⇄ nuvem (relay AMT8000)
+
+Documentação do protocolo que o eletrificador **Intelbras ELC 6012 NET** usa para
+falar com a nuvem Intelbras (relay `amt8000`), obtida por **engenharia reversa via
+captura de rede** do próprio equipamento, a partir da base de
+[rhacius/ha-elc6012net](https://github.com/rhacius/ha-elc6012net) (TCP 9009, **texto claro, sem TLS**).
+
+O objetivo é permitir **controle 100% local, sem nuvem**: um servidor que faz o
+papel do relay, ao qual a central se conecta (ver [`relay/`](relay/)).
+
+> MAC dos exemplos é fictício (`00:1A:3F:12:34:56`). Status de cada item:
+> ✅ confirmado em captura · 🟡 parcial / inferido · ⬜ ainda a validar.
+
+---
+
+## 1. Arquitetura
+
+A central mantém uma conexão TCP **de saída, permanente**, com o relay. O app
+(ou um cliente) conecta no mesmo relay e é roteado até a central pelo MAC. Na LAN
+a central só responde a sondas de descoberta na porta 9009 (segundo o projeto
+rhacius); **todo o controle passa pelo relay**. Dois servidores (porta 9009):
+
+1. `amt.intelbras.com.br` — servidor "geral" (informa em qual relay o painel está)
+2. `amt8000.intelbras.com.br` — relay onde a sessão acontece (ex.: `52.67.212.35`)
+
+**Nenhuma autenticação do servidor.** ✅ (a *sessão de app* tem sua própria abertura, §3.4) A central se registra mandando só o MAC +
+modelo; o relay responde `f0 fe` (ok) e segue. Não há TLS, nem token, nem desafio
+que a central valide. **Consequência: se a central conectar no seu servidor, ele é
+aceito** — é o que torna o controle local viável.
+
+---
+
+## 2. Enquadramento
+
+Frames de controle:
+
+```
+[sessão : 4 bytes][tam : 2 bytes BE][payload : tam bytes][checksum : 1 byte]
+total = 7 + tam     checksum = XOR(todos os bytes anteriores) ^ 0xFF
+```
+
+- `sessão` = `00 00 00 00` na conexão base da central; `00 00 00 01` (e 02, 03…)
+  para sessões de app. A central ecoa a sessão com os dois primeiros bytes
+  trocados (`00 00 00 01` do relay ⇄ `00 01 00 00` da central). 🟡
+- **Exceção — resposta de status (`0b 4a`):** o campo `tam` vale o total (164) e
+  **não há checksum** nesse firmware (placa 1.1.0 / módulo 1.2.11). Outros
+  firmwares mandam 165 com checksum. 🟡 (ver §4.1 do projeto rhacius)
+
+Exemplos reais (✅):
+
+| Frame | Bytes |
+|---|---|
+| ack ok | `00 00 00 00 00 02 f0 fe f3` |
+| poll de status | `00 00 00 01 00 02 0b 4a bd` |
+| comando choque ON | `00 00 00 01 00 04 40 1e 02 01 a7` |
+
+---
+
+## 3. Handshake de sessão (central ⇄ relay)
+
+Ordem observada ao conectar (✅):
+
+1. **Registro** (central→relay): `… 00 38  3f 94 45 00 00  <MAC:6>  <modelo>  01 01 …`
+   → relay responde `f0 fe` (ok). Sem senha/token.
+2. **`f0 f7`** (central) → `f0 fe` (relay).
+3. **Hora** (central pede `f0 80 03`) → relay responde
+   `f0 80 <AA MM DD DS hh mm ss>` em **BCD** (DS = dia da semana) (ex.: `26 11 13 06 08 18 04`). ✅
+4. **Abertura de sessão de app** (`f0 f0`): antes de pedir status ou mandar
+   comando, o relay abre uma sessão (`00 00 00 0N`) enviando `f0 f0 <payload>`;
+   a central confirma com `f0 f0 00`. O payload **ainda não foi decodificado** e
+   pode conter código de acesso — por isso não é reproduzido aqui. ⬜
+
+---
+
+## 4. Controle e monitoração
+
+### 4.1 Status — comando `0b 4a`  ✅
+Relay manda `00 00 00 01 00 02 0b 4a bd`; central responde **164 bytes**.
+Offsets confirmados (0-based, a partir do byte 0 do frame):
+
+| Offset | Campo |
+|---|---|
+| `[8]` | modelo (`0x35` = ELC 6012 NET) |
+| `[30]` bit0 | choque ligado |
+| `[31]` bit0 | alarme armado |
+| `[46..47]` | zonas abertas (bitmap) |
+| `[54..55]` | zonas disparadas (bitmap) |
+| `[62..63]` | zonas em bypass (bitmap) |
+| `[72..77]` | relógio: dia mês ano hh mm ss (hex) |
+| `[163]` | sinal Wi-Fi: RSSI; se `>127`, ler como negativo (`256 - v` = \|dBm\|) 🟡 |
+
+### 4.2 Arme / desarme / choque — comando `40 1e`  ✅
+Relay→central: `40 1e <partição> <modo>`.
+
+| Partição | Modo | Efeito |
+|---|---|---|
+| `01` | `01`/`00` | alarme liga / desliga |
+| `02` | `01`/`00` | choque liga / desliga |
+| `ff` | `01`/`00` | ambos (partição 255) liga / desliga |
+
+### 4.3 Bypass de zona — comando `40 1f`  ⬜
+Formato conhecido do projeto rhacius (`40 1f` + bitmap de zonas), **ainda não
+confirmado em captura central⇄relay**. Ver [STATUS](docs/STATUS.md).
+
+### 4.4 Eventos — comando `10 b2`  ✅
+Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
+Contact-ID, com dois timestamps. Relay responde `f0 fe`. É o que gera as
+notificações. Decodificação detalhada de cada código: 🟡 (parcial).
+
+---
+
+## 5. Configuração — leitura/escrita de blocos  ✅
+
+A configuração **não é um protocolo à parte**: é leitura/escrita de blocos de
+memória, mesmo enquadramento.
+
+- **Ler**: relay→central `3f 12 <addr:2> <tam:2>` → central responde com os dados.
+- **Gravar**: relay→central `2f 12 <addr:2> <tam:2> <dados:tam>`.
+
+### Mapa de blocos (✅ confirmado por captura)
+
+| Endereço | Tam | Conteúdo |
+|---|---|---|
+| `00 00` | 128 | **Zonas**: 8 × 16 bytes = `[attr][nome 15 chars]` |
+| `02 b0` | 16 | **Nome do eletrificador** |
+| `02 c0` | 96 | **Config Wi-Fi** (SSID + senha, **texto claro** ⚠️) |
+| `03 e0` | 32 | **Config geral** (abaixo) |
+| `04 00` | 420 | **Usuários** (nomes) |
+
+### Bloco `00 00` — atributo de zona (bitfield)  ✅
+
+| Bit | Atributo |
+|---|---|
+| `0x01` | habilitada |
+| `0x02` | inteligente |
+| `0x04` | temporizada |
+| `0x10` | silenciosa |
+| `0x20` | parcial |
+| `0x40` | 24 horas |
+
+### Bloco `03 e0` — config geral (offsets dentro dos dados)  ✅
+
+| Offset | Campo |
+|---|---|
+| `[3]` | pulsos falhos (ex.: `0a`=10, `0f`=15) |
+| `[7]` | modo PGM1: disparo=`00`, acesso app=`01`, espelho sirene=`02` |
+| `[11]` | modo PGM2: cerca=`00`, acesso app=`01`, espelho sirene=`02` |
+| `[14]` | reportagem em tempo real (`01`/`00`) |
+| `[8]`,`[12]` | PGM temporizada (segundos) — 🟡 a confirmar |

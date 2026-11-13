@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""
+decode_capture.py — decodifica uma captura (.pcap) do protocolo ELC 6012 NET
+(central <-> relay/nuvem, TCP 9009). Projeto: elc6012net-local. Stdlib pura.
+
+Mascara automaticamente SSID e senha de Wi-Fi (bloco de config 02 c0) para a
+saída poder ser compartilhada com segurança. Protocolo: ver ../PROTOCOL.md.
+
+Uso:  python3 decode_capture.py captura.pcap [--port 9009]
+"""
+import argparse, struct, sys
+from datetime import datetime, timezone, timedelta
+
+TZ = timezone(timedelta(hours=-3))  # ajuste se precisar
+
+PART = {0x01: "alarme", 0x02: "choque", 0xff: "tudo(255)"}
+BLOCKS = {  # addr -> (nome, sensivel?)
+    "0000": ("zonas", False), "02b0": ("nome", False),
+    "02c0": ("wifi(SSID+senha)", True), "03e0": ("config geral", False),
+    "0400": ("usuarios", False),
+}
+ZONE_ATTR = [(0x01,"habilitada"),(0x02,"inteligente"),(0x04,"temporizada"),
+             (0x10,"silenciosa"),(0x20,"parcial"),(0x40,"24h")]
+
+def read_pcap(path):
+    data = open(path, "rb").read()
+    m = struct.unpack("<I", data[:4])[0]
+    endian = "<" if m in (0xa1b2c3d4, 0xa1b23c4d) else ">"
+    nano = m in (0xa1b23c4d, 0x4d3cb2a1)
+    off = 24
+    while off + 16 <= len(data):
+        s, fr, cl, ol = struct.unpack(endian + "IIII", data[off:off+16]); off += 16
+        yield s + fr/(1e9 if nano else 1e6), data[off:off+cl]; off += cl
+
+def tcp(pkt):
+    if len(pkt) < 14 or struct.unpack(">H", pkt[12:14])[0] != 0x0800: return None
+    ip = pkt[14:]; ihl = (ip[0] & 0xf) * 4
+    if ip[9] != 6: return None
+    t = ip[ihl:]; doff = (t[12] >> 4) * 4; iptot = struct.unpack(">H", ip[2:4])[0]
+    sp, dp = struct.unpack(">HH", t[0:4])
+    return ".".join(map(str, ip[12:16])), sp, ".".join(map(str, ip[16:20])), dp, t[doff:iptot-ihl]
+
+def zone_attrs(v):
+    return "+".join(n for b, n in ZONE_ATTR if v & b) or "nenhum"
+
+def decode(path, port):
+    # descobre os dois IPs do fluxo 9009
+    peers = {}
+    pkts = list(read_pcap(path))
+    for ts, pkt in pkts:
+        r = tcp(pkt)
+        if r and (r[1] == port or r[3] == port):
+            peers[r[0]] = peers.get(r[0], 0) + 1
+    if not peers:
+        print("nenhum tráfego na porta", port); return
+    # central = quem mais aparece como origem de frames grandes? heurística: o nuvem é o IP não-privado
+    relay = max(peers, key=lambda ip: (not ip.startswith(("10.","192.168.","172."))), default=None)
+    print(f"# fluxo porta {port} — relay/nuvem = {relay}\n")
+    for ts, pkt in pkts:
+        r = tcp(pkt)
+        if not r: continue
+        src, sp, dst, dp, pl = r
+        if (sp != port and dp != port) or not pl: continue
+        d = "C->R" if dst == relay else "R->C"
+        hh = datetime.fromtimestamp(ts, TZ).strftime("%H:%M:%S")
+        cmd = pl[6:8].hex() if len(pl) >= 8 else pl.hex()
+        body = pl[8:]
+        note = None
+        if cmd == "401e" and len(pl) >= 10:
+            note = f"COMANDO {PART.get(pl[8],hex(pl[8]))} -> {'LIGA' if pl[9] else 'DESLIGA'}"
+        elif cmd == "0b4a" and len(pl) >= 164:
+            sig = pl[163]; sig = (256-sig) if sig > 127 else sig
+            note = (f"STATUS choque={'on' if pl[30]&1 else 'off'} "
+                    f"alarme={'on' if pl[31]&1 else 'off'} zonas={pl[46:48].hex()} "
+                    f"disparo={pl[54:56].hex()} bypass={pl[62:64].hex()} sinal=-{sig}dBm")
+        elif cmd == "401f":
+            note = f"BYPASS (40 1f) dados={body.hex(' ')}"
+        elif cmd == "10b2":
+            note = f"EVENTO ev={body[6:16].hex()} (contact-id)"
+        elif cmd in ("3f12", "2f12") and len(body) >= 4:
+            addr = body[0:2].hex(); ln = (body[2]<<8)|body[3]; data = body[4:4+ln]
+            bname, sens = BLOCKS.get(addr, (f"addr {addr}", False))
+            rw = "LER" if cmd == "3f12" else "GRAVAR"
+            extra = ""
+            if len(data) < ln:
+                extra = "  (requisição)"
+            elif not sens and data:
+                if addr == "0000" and len(data) >= 1:
+                    extra = f"  zona1_attr={zone_attrs(data[0])}"
+                elif addr == "03e0" and len(data) >= 15:
+                    extra = (f"  pulsos={data[3]} pgm1={data[7]} pgm2={data[11]} "
+                             f"reportagem={data[14]}")
+                else:
+                    txt = "".join(chr(c) if 32<=c<127 else "." for c in data[:24])
+                    extra = f"  '{txt}'"
+            else:
+                extra = "  <dados sensíveis mascarados>"
+            note = f"{rw} bloco {bname} (addr {addr}, {ln}B){extra}"
+        if note:
+            print(f"{hh} {d} {note}")
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("pcap")
+    ap.add_argument("--port", type=int, default=9009)
+    ns = ap.parse_args()
+    decode(ns.pcap, ns.port)
