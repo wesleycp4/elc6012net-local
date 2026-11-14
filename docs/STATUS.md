@@ -17,8 +17,8 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Histórico `39 00` | ✅ | leitura por página; registro = Contact-ID + timestamp |
 | Keepalive `f0 fd`/`f0 f1` | ✅ | central pinga, relay responde; implementado no relay |
 | Registro `3f 94` | ✅ | MAC + modelo, sem auth |
-| PGM `45 af` | 🟡 | acionar saída PGM (do vídeo); falta confirmar `<pgm>`/`<estado>` |
-| Pânico `40 1a` | 🟡 | provável emergência/pânico (do vídeo); a confirmar |
+| Pânico `40 1a 01` | ✅ | dispara emergência; confirmado em teste |
+| Acionar PGM `45 af` | 🟡 | comando certo; deu erro (PGM não habilitada); falta validar com PGM no modo app |
 | Sinal Wi-Fi `[163]` (RSSI com sinal) | 🟡 | consistente, falta medição independente |
 | Bypass `40 1f` | ✅ | `40 1f ff <z1..z8>`, confirmado em captura |
 
