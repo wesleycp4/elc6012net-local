@@ -69,6 +69,9 @@ class Relay:
         self.lock = threading.Lock()
         self.buf = b""
         self.last_status = {}
+        self.code = b""          # dígitos do código de acesso (bytes 0-9)
+        self.session_opened = False
+        self.SID = b"\x00\x00\x00\x01"  # índice de sessão deste relay
 
     def send(self, session: bytes, payload: bytes):
         if not self.sock: 
@@ -114,8 +117,10 @@ class Relay:
         elif c == "f080":
             print("[TIME] central pediu hora -> enviando")
             self.send(b"\x00\x00\x00\x00", time_sync_payload())
+            self.open_session()
         elif c == "f0f0":                    # confirmação de sessão (resposta da central)
-            print(f"[SESSAO] central confirmou: {frame[8:-1].hex()}")
+            self.session_opened = True
+            print(f"[SESSAO] aberta (central confirmou {frame[8:-1].hex()}) -> status e comandos liberados")
         else:
             print(f"[??] {frame.hex(' ')} -> ack")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
@@ -129,11 +134,22 @@ class Relay:
             for cmd, frame in self.frames():
                 self.handle(frame, cmd)
 
+    def open_session(self):
+        """Abre a sessão de app enviando f0 f0 01 <código> 10 00 (§3.4).
+        Sem --code o relay não abre sessão: a central ignora poll/comando."""
+        if not self.code:
+            print("[SESSAO] sem --code; a central provavelmente ignorará status/comandos")
+            return
+        payload = bytes([0xf0, 0xf0, 0x01]) + self.code + bytes([0x10, 0x00])
+        print("[SESSAO] abrindo sessão de app...")
+        self.send(self.SID, payload)
+
     def poller(self, interval):
         while True:
             time.sleep(interval)
             if self.sock:
-                try: self.send(b"\x00\x00\x00\x01", CMD_MAP["status"])
+                if not self.session_opened: continue
+                try: self.send(self.SID, CMD_MAP["status"])
                 except OSError: return
 
 
@@ -188,7 +204,7 @@ def start_web(relay, port):
         def do_POST(self):
             name = self.path.rsplit("/", 1)[-1]
             if name in CMD_MAP:
-                relay.send(b"\x00\x00\x00\x01", CMD_MAP[name]); self._send(200, "ok", "text/plain")
+                relay.send(relay.SID, CMD_MAP[name]); self._send(200, "ok", "text/plain")
             else:
                 self._send(404, "comando desconhecido", "text/plain")
     httpd = HTTPServer(("0.0.0.0", port), H)
@@ -200,9 +216,12 @@ def main():
     ap.add_argument("--listen", default="0.0.0.0:9009")
     ap.add_argument("--poll", type=int, default=15)
     ap.add_argument("--web", type=int, default=0, help="porta do painel web (0 = desligado)")
+    ap.add_argument("--code", default="", help="código de acesso (dígitos) p/ abrir a sessão")
     ns = ap.parse_args()
     host, port = ns.listen.rsplit(":", 1)
     r = Relay()
+    if ns.code:
+        r.code = bytes(int(d) for d in ns.code if d.isdigit())
     if ns.web:
         start_web(r, ns.web)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -224,9 +243,15 @@ def main():
         cmd = line.strip().lower()
         if cmd == "quit": break
         elif cmd in CMD_MAP:
-            r.send(b"\x00\x00\x00\x01", CMD_MAP[cmd])
+            r.send(r.SID, CMD_MAP[cmd])
+        elif cmd.startswith("bypass "):
+            z = cmd.split()[1]  # 8 dígitos 0/1, ex.: bypass 00100000 (zona 3)
+            if len(z) == 8 and set(z) <= {"0","1"}:
+                r.send(r.SID, bytes.fromhex("401fff") + bytes(int(c) for c in z))
+            else:
+                print("uso: bypass <8 dígitos 0/1>, ex.: bypass 00100000")
         elif cmd.startswith("raw "):
-            r.send(b"\x00\x00\x00\x01", bytes.fromhex(cmd[4:].replace(" ", "")))
+            r.send(r.SID, bytes.fromhex(cmd[4:].replace(" ", "")))
         elif cmd:
             print("comando desconhecido")
 
