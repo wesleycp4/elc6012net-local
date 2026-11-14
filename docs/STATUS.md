@@ -15,7 +15,7 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Arme/desarme/choque `40 1e` | ✅ | partições 1 / 2 / 255 |
 | Eventos `10 b2` | 🟡 | chega e é confirmado; faltam decodificar todos os códigos |
 | Sinal Wi-Fi `[163]` (RSSI com sinal) | 🟡 | consistente, falta medição independente |
-| **Bypass `40 1f`** | ⬜ | **teste aberto** (ver abaixo) |
+| Bypass `40 1f` | ✅ | `40 1f ff <z1..z8>`, confirmado em captura |
 
 ## Configuração (blocos `3f 12` ler / `2f 12` gravar)
 | Bloco | Status | Observação |
@@ -33,8 +33,8 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 |---|---|
 | Enquadramento (leitura/escrita de frames) | ✅ validado contra frames reais |
 | Registro + hora | 🟡 implementado, falta validar ao vivo |
-| Abertura de sessão `f0 f0` | ⬜ **payload não decodificado** — sem ela, poll/comando provavelmente são ignorados |
-| Status + comando | 🟡 implementado, depende da sessão acima |
+| Abertura de sessão `f0 f0` | ✅ decodificado: `f0 f0 01 <código> 10 00` (código em texto claro); implementado no relay via `--code` |
+| Status + comando | 🟡 implementado (após abrir sessão), falta validar ao vivo |
 | Bypass / PGM / config via relay | ⬜ depende dos testes acima |
 | Integração MQTT → Home Assistant local | ⬜ planejado |
 | Interface web | ⬜ planejado |
@@ -48,7 +48,7 @@ Com a central conectada a um gateway sob seu controle (ver
 faça a ação pelo app **anotando a hora** e mande a captura decodificada
 (`tools/decode_capture.py`, que já mascara segredos).
 
-1. **Bypass `40 1f`** — anule e reative uma zona pelo app.
+1. ~~Bypass `40 1f`~~ ✅ confirmado.
 2. **PGM temporizada** — mude os segundos de uma PGM (0 → N → 0).
 3. **Parear sensor sem fio** — com a central **desarmada**, cadastre um sensor.
 4. **Validar o relay local** — rode o `relay/elc_local_relay.py`, redirecione a

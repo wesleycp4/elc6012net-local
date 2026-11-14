@@ -65,10 +65,15 @@ Ordem observada ao conectar (✅):
 2. **`f0 f7`** (central) → `f0 fe` (relay).
 3. **Hora** (central pede `f0 80 03`) → relay responde
    `f0 80 <AA MM DD DS hh mm ss>` em **BCD** (DS = dia da semana) (ex.: `26 11 13 06 08 18 04`). ✅
-4. **Abertura de sessão de app** (`f0 f0`): antes de pedir status ou mandar
-   comando, o relay abre uma sessão (`00 00 00 0N`) enviando `f0 f0 <payload>`;
-   a central confirma com `f0 f0 00`. O payload **ainda não foi decodificado** e
-   pode conter código de acesso — por isso não é reproduzido aqui. ⬜
+4. **Abertura de sessão de app** (`f0 f0`) ✅ — antes de pedir status ou mandar
+   comando, o relay abre uma sessão de índice N enviando, na sessão `00 00 00 0N`:
+   `f0 f0 01 <dígitos do código> 10 00`; a central confirma com `f0 f0 00 <ck>` na
+   sessão `00 0N 00 00`. **Sem essa abertura, a central ignora poll e comando.**
+
+   ⚠️ **O código de acesso vai em texto claro**, um dígito por byte (ex.: um código
+   de 6 dígitos ocupa 6 bytes entre o prefixo `01` e o sufixo `10 00`). Por isso o
+   código fica exposto na captura; o relay recebe o código em tempo de execução
+   (`--code`), nunca embutido.
 
 ---
 
@@ -98,9 +103,10 @@ Relay→central: `40 1e <partição> <modo>`.
 | `02` | `01`/`00` | choque liga / desliga |
 | `ff` | `01`/`00` | ambos (partição 255) liga / desliga |
 
-### 4.3 Bypass de zona — comando `40 1f`  ⬜
-Formato conhecido do projeto rhacius (`40 1f` + bitmap de zonas), **ainda não
-confirmado em captura central⇄relay**. Ver [STATUS](docs/STATUS.md).
+### 4.3 Bypass de zona — comando `40 1f`  ✅
+Relay→central: `40 1f ff <z1 z2 z3 z4 z5 z6 z7 z8>`, um byte por zona
+(`01` = anulada, `00` = normal). O `ff` inicial é o seletor de partição (todas),
+igual ao `40 1e`. Ex.: `40 1f ff 00 00 01 00 00 00 00 00` anula só a zona 3.
 
 ### 4.4 Eventos — comando `10 b2`  ✅
 Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
