@@ -114,9 +114,12 @@ igual ao `40 1e`. Ex.: `40 1f ff 00 00 01 00 00 00 00 00` anula só a zona 3.
 Relay→central: `39 00 <página 0..7>`; a central responde com a página de eventos,
 cada registro com 15 bytes = código Contact-ID (9B) + timestamp `DD MM YY HH MM SS`.
 
-### 4.5 Comandos observados, função não confirmada  🟡
-- `40 1a 01` (relay→central) — visto 1x; família `40 1x` (controle). ⬜
-- `45 af 01 01` (relay→central) — visto 1x. ⬜
+### 4.5 Comandos observados (função inferida do vídeo)  🟡
+- `45 af <pgm> <estado>` (relay→central) — **acionar saída PGM** (ex.: `45 af 01 01`
+  = PGM 1 ligar). Capturado com a tela de PGM aberta no app. Falta confirmar o
+  mapeamento exato de `<pgm>`/`<estado>`.
+- `40 1a 01` (relay→central) — provável **pânico/emergência** (capturado no menu
+  Emergência/Sirene do app). A confirmar qual ação exata.
 
 ### 4.6 Eventos — comando `10 b2`  ✅
 Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
