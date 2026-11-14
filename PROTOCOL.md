@@ -118,11 +118,11 @@ cada registro com 15 bytes = código Contact-ID (9B) + timestamp `DD MM YY HH MM
 Relay→central: `40 1a 01` dispara o pânico/emergência (a central entra em disparo
 imediatamente). Confirmado em teste.
 
-### 4.6 Acionar PGM — comando `45 af`  🟡
-Relay→central: `45 af <pgm> <estado>` (ex.: `45 af 01 01`). Aciona uma saída
-programável (PGM), que a central só aceita se a PGM estiver no modo "acesso via
-app". No teste deu erro (PGM não habilitada). Ordem exata de `<pgm>`/`<estado>`
-ainda a confirmar com a PGM habilitada.
+### 4.6 Acionar PGM — comando `45 af`  ✅
+Relay→central: `45 af <pgm> <estado>`, PGM **base-0** (`00` = PGM1, `01` = PGM2),
+estado `01` = liga / `00` = desliga. Ex.: `45 af 00 01` liga a PGM1. A central só
+aceita se a PGM estiver no modo "acesso via app" (senão responde com erro).
+PGM = saída programável (contato que aciona um aparelho externo: portão, luz…).
 
 ### 4.7 Eventos — comando `10 b2`  ✅
 Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
