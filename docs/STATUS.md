@@ -17,6 +17,10 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Status `0b 4a` (164 bytes) | ✅ | choque, alarme, zonas, bypass, relógio |
 | Arme/desarme/choque `40 1e` | ✅ | partições 1 / 2 / 255 |
 | Eventos `10 b2` | 🟡 | chega e é confirmado; faltam decodificar todos os códigos |
+| Histórico `39 00` | ✅ | leitura por página; registro = Contact-ID + timestamp |
+| Keepalive `f0 fd`/`f0 f1` | ✅ | central pinga, relay responde; implementado no relay |
+| Registro `3f 94` | ✅ | MAC + modelo, sem auth |
+| `40 1a` / `45 af` | ⬜ | comandos vistos 1x; função a identificar |
 | Sinal Wi-Fi `[163]` (RSSI com sinal) | 🟡 | consistente, falta medição independente |
 | Bypass `40 1f` | ✅ | `40 1f ff <z1..z8>`, confirmado em captura |
 

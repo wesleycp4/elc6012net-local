@@ -60,8 +60,8 @@ Exemplos reais (✅):
 
 Ordem observada ao conectar (✅):
 
-1. **Registro** (central→relay): `… 00 38  3f 94 45 00 00  <MAC:6>  <modelo>  01 01 …`
-   → relay responde `f0 fe` (ok). Sem senha/token.
+1. **Registro** (central→relay): comando `3f 94` — `3f 94 45 00 00 <MAC:6> <modelo> 01 01 …`
+   → relay responde `f0 fe` (ok). Sem senha/token. ✅
 2. **`f0 f7`** (central) → `f0 fe` (relay).
 3. **Hora** (central pede `f0 80 03`) → relay responde
    `f0 80 <AA MM DD DS hh mm ss>` em **BCD** (DS = dia da semana) (ex.: `26 11 13 06 08 18 04`). ✅
@@ -74,6 +74,8 @@ Ordem observada ao conectar (✅):
    de 6 dígitos ocupa 6 bytes entre o prefixo `01` e o sufixo `10 00`). Por isso o
    código fica exposto na captura; o relay recebe o código em tempo de execução
    (`--code`), nunca embutido.
+5. **Keepalive de sessão** ✅ — durante a sessão, a central envia `f0 fd` a cada
+   ~5 s e o relay responde `f0 f1`. Sem a resposta, a central encerra a sessão.
 
 ---
 
@@ -108,7 +110,15 @@ Relay→central: `40 1f ff <z1 z2 z3 z4 z5 z6 z7 z8>`, um byte por zona
 (`01` = anulada, `00` = normal). O `ff` inicial é o seletor de partição (todas),
 igual ao `40 1e`. Ex.: `40 1f ff 00 00 01 00 00 00 00 00` anula só a zona 3.
 
-### 4.4 Eventos — comando `10 b2`  ✅
+### 4.4 Histórico de eventos — comando `39 00`  ✅
+Relay→central: `39 00 <página 0..7>`; a central responde com a página de eventos,
+cada registro com 15 bytes = código Contact-ID (9B) + timestamp `DD MM YY HH MM SS`.
+
+### 4.5 Comandos observados, função não confirmada  🟡
+- `40 1a 01` (relay→central) — visto 1x; família `40 1x` (controle). ⬜
+- `45 af 01 01` (relay→central) — visto 1x. ⬜
+
+### 4.6 Eventos — comando `10 b2`  ✅
 Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
 Contact-ID, com dois timestamps. Relay responde `f0 fe`. É o que gera as
 notificações. Decodificação detalhada de cada código: 🟡 (parcial).
