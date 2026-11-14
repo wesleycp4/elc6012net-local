@@ -262,7 +262,7 @@ def main():
         elif cmd.startswith("pgm "):   # pgm <1|2> <on|off> (ordem dos params a confirmar)
             pr = cmd.split()
             if len(pr) == 3 and pr[1] in ("1","2") and pr[2] in ("on","off"):
-                r.send(r.SID, bytes.fromhex("45af") + bytes([int(pr[1]), 1 if pr[2]=="on" else 0]))
+                r.send(r.SID, bytes.fromhex("45af") + bytes([int(pr[1])-1, 1 if pr[2]=="on" else 0]))  # PGM base-0
             else:
                 print("uso: pgm <1|2> <on|off>")
         elif cmd == "events":
