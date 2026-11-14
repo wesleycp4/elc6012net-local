@@ -87,7 +87,8 @@ def decode(path, port):
         elif cmd == "f0f0" and len(body) >= 1:
             note = "ABERTURA DE SESSAO (f0 f0)  <codigo mascarado>"
         elif cmd == "401a" and len(pl) >= 9:
-            note = f"PANICO (40 1a {pl[8]:02x})" + ("" if pl[8]==1 else "  [variante 00: efeito nao confirmado]")
+            PANIC = {0:"silencioso",1:"audivel",2:"fogo",3:"medico"}
+            note = f"PANICO (40 1a {pl[8]:02x} = {PANIC.get(pl[8],'tipo?')})"
         elif cmd in ("3f12", "2f12") and len(body) >= 4:
             addr = body[0:2].hex(); ln = (body[2]<<8)|body[3]; data = body[4:4+ln]
             bname, sens = BLOCKS.get(addr, (f"addr {addr}", False))

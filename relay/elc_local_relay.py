@@ -172,7 +172,10 @@ class Relay:
     def keepalive(self, interval):
         """Mantém a sessão viva. Na captura QUEM PINGA É O SERVIDOR (nuvem):
         envia f0f1 na sessão de app e a central responde f0fd/f0fe. O relay faz
-        o mesmo papel — pinga proativamente; não espera a central pingar."""
+        o mesmo papel — pinga proativamente; não espera a central pingar.
+        (Nota: o enum do APK em bobaoapae chama f0f1 de DISCONNECT e f0f7 de
+        KEEP_ALIVE, mas na nossa captura do leg central↔nuvem a nuvem envia f0f1
+        repetidamente SEM derrubar a sessão. Confirmar no teste ao vivo.)"""
         while True:
             time.sleep(interval)
             if self.sock and self.session_opened:
@@ -256,7 +259,9 @@ def main():
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((host, int(port))); srv.listen(1)
     print(f"relay local escutando em {host}:{port}. Aguardando a central...")
-    print("comandos: arm disarm shockon shockoff allon alloff status raw <hex> quit")
+    print("comandos: arm disarm shockon shockoff allon alloff status | "
+          "panic [0-3] sirenoff | pgm <1|2> <on|off> | bypass <8 digitos> | "
+          "events | raw <hex> | quit")
 
     def accept_loop():
         while True:
@@ -273,11 +278,17 @@ def main():
         if cmd == "quit": break
         elif cmd in CMD_MAP:
             r.send(r.SID, CMD_MAP[cmd])
-        elif cmd == "panic":
-            # 40 1a 01 = dispara emergência (confirmado em captura+vídeo).
-            # 40 1a 00 também foi observado, mas o efeito não foi confirmado — não usamos.
-            print("[!] PÂNICO — dispara a sirene/alarme")
-            r.send(r.SID, bytes.fromhex("401a01"))
+        elif cmd == "panic" or cmd.startswith("panic "):
+            # 40 1a <tipo>: 0=silencioso, 1=audivel, 2=fogo, 3=medico (cross-val. bobaoapae).
+            # Confirmado em teste o tipo 1 (disparo audivel).
+            pr = cmd.split()
+            tipo = int(pr[1]) if len(pr) == 2 and pr[1] in ("0","1","2","3") else 1
+            print(f"[!] PÂNICO tipo={tipo} ({'silencioso' if tipo==0 else 'audivel' if tipo==1 else 'fogo' if tipo==2 else 'medico'})")
+            r.send(r.SID, bytes.fromhex("401a") + bytes([tipo]))
+        elif cmd == "sirenoff":
+            # 40 19 = desliga sirene sem desarmar (opcode do APK via bobaoapae; NÃO testado no ELC)
+            print("[*] desligar sirene (40 19) — nao testado no ELC")
+            r.send(r.SID, bytes.fromhex("4019"))
         elif cmd.startswith("pgm "):   # pgm <1|2> <on|off> (ordem dos params a confirmar)
             pr = cmd.split()
             if len(pr) == 3 and pr[1] in ("1","2") and pr[2] in ("on","off"):

@@ -117,6 +117,10 @@ Relay→central: `40 1e <partição> <modo>`.
 | `02` | `01`/`00` | choque liga / desliga |
 | `ff` | `01`/`00` | ambos (partição 255) liga / desliga |
 
+No ELC o 2º byte observado é liga/desliga (`01`/`00`). Em centrais de alarme AMT o
+mesmo comando codifica o modo de arme (0=desarma, 1=total, 2=parcial/stay,
+3=forçado) — ver §7; não testado no ELC.
+
 ### 4.3 Bypass de zona — comando `40 1f`  ✅
 Relay→central: `40 1f ff <z1 z2 z3 z4 z5 z6 z7 z8>`, um byte por zona
 (`01` = anulada, `00` = normal). O `ff` inicial é o seletor de partição (todas),
@@ -127,10 +131,20 @@ Relay→central: `39 00 <página 0..7>`; a central responde com a página de eve
 cada registro com 15 bytes = código Contact-ID (9B) + timestamp `DD MM YY HH MM SS`.
 
 ### 4.5 Pânico — comando `40 1a`  ✅
-Relay→central: `40 1a 01` dispara o pânico/emergência (a central entra em disparo
-imediatamente). Confirmado em teste (vídeo + captura mapa3).
-Também foi observado `40 1a 00` numa captura (mapa) **sem efeito confirmado** —
-possivelmente consulta/cancelamento; semântica em aberto. 🟡 O relay só usa o `01`.
+Relay→central: `40 1a <tipo>`. O segundo byte é o **tipo de pânico** (não é
+liga/desliga):
+
+| Tipo | Efeito |
+|---|---|
+| `00` | pânico **silencioso** (sem sirene; alerta ao monitoramento) |
+| `01` | pânico **audível** (dispara a sirene) |
+| `02` | fogo (só família AMT 8000) |
+| `03` | emergência médica (só família AMT 8000) |
+
+Nosso teste confirmou o `01` (disparo audível, vídeo + mapa3). O `40 1a 00`
+apareceu na captura mapa e bate com o tipo "silencioso" (daí não ter efeito
+visível). A tabela de tipos foi validada cruzando com a eng. reversa do APK em
+`bobaoapae/guardian-api-intelbras` (ver §7). O relay usa `01` por padrão.
 
 ### 4.6 Acionar PGM — comando `45 af`  ✅
 Relay→central: `45 af <pgm> <estado>`, PGM **base-0** (`00` = PGM1, `01` = PGM2),
@@ -142,6 +156,11 @@ PGM = saída programável (contato que aciona um aparelho externo: portão, luz�
 Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
 Contact-ID, com dois timestamps. Relay responde `f0 fe`. É o que gera as
 notificações. Decodificação detalhada de cada código: 🟡 (parcial).
+
+### 4.8 Desligar sirene — comando `40 19`  ⬜
+Relay→central: `40 19` silencia a sirene sem desarmar. Byte do comando conhecido
+pela eng. reversa do APK (`bobaoapae`, ver §7); **não testado no ELC** — falta
+confirmar payload/efeito em captura.
 
 ---
 
@@ -183,3 +202,27 @@ memória, mesmo enquadramento.
 | `[11]` | modo PGM2: cerca=`00`, acesso app=`01`, espelho sirene=`02` |
 | `[14]` | reportagem em tempo real (`01`/`00`) |
 | `[8]`,`[12]` | PGM temporizada (segundos) — 🟡 a confirmar |
+
+---
+
+## 7. Validação cruzada e referências
+
+Dois projetos independentes de engenharia reversa do mesmo ecossistema
+corroboram o mapeamento acima — úteis como conferência e para o que ainda falta:
+
+- **`bobaoapae/guardian-api-intelbras`** (MIT) — *cliente* da nuvem Intelbras
+  (OAuth + ISECNet) com integração Home Assistant. Da eng. reversa do APK, os
+  opcodes V2 batem com os nossos: `40 1e` arme, `0b 4a` status, `40 1a` pânico,
+  `40 1f` bypass, `45 af` PGM, `f0 f0` autorização, e o **checksum XOR^0xFF é o
+  mesmo**. Também confirma os **tipos de pânico** (§4.5) e traz comandos que
+  ainda não testamos no ELC (`40 19` desliga sirene, modos de arme). Ele é um
+  cliente que *disca para a nuvem*; não emula o servidor. O item "ISECNet local
+  (sem relay da nuvem)" é roadmap **em aberto** lá — ou seja, o relay/servidor
+  local deste projeto é justamente a peça que falta para controle 100% local.
+- **`rhacius/ha-elc6012net`** — base original do add-on de nuvem para o ELC 6012
+  NET (ver README e LICENSE).
+
+O que é específico deste projeto: o **lado servidor** — emular a nuvem para a
+central conectar localmente (enquadramento, abertura de sessão com código,
+keepalive, status 164B sem checksum, blocos de config) — validado byte a byte
+contra capturas reais do ELC 6012 NET (placa 1.1.0 / módulo 1.2.11).
