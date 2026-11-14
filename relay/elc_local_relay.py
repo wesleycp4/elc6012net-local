@@ -108,10 +108,14 @@ class Relay:
         elif c == "10b2":                    # central reportando evento
             print(f"[EVENTO] {frame[8:].hex(' ')}")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
-        elif c[:2] == "3f" or len(frame) > 50:   # registro (MAC+modelo)
+        elif c == "3f94":                    # registro (MAC + modelo)
             mac = frame[11:17].hex(":")
             print(f"[REGISTRO] central MAC={mac} modelo={frame[17]:02x} -> ack")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
+        elif c == "f0fd":                    # keepalive da central -> responde f0f1
+            self.send(self.SID, bytes.fromhex("f0f1"))
+        elif c == "3900":                    # resposta de histórico de eventos
+            self._hist(frame[8:])
         elif c == "f0f7":
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
         elif c == "f080":
@@ -133,6 +137,14 @@ class Relay:
             self.buf += data
             for cmd, frame in self.frames():
                 self.handle(frame, cmd)
+
+    def _hist(self, body):
+        """Decodifica uma página de histórico (39 00 <pág> <eventos de 15B>)."""
+        recs = body[2:]
+        for i in range(0, len(recs) - 14, 15):
+            r = recs[i:i+15]
+            ts = f"{r[9]:02d}/{r[10]:02d}/{r[11]:02d} {r[12]:02d}:{r[13]:02d}:{r[14]:02d}"
+            print(f"[HIST] {ts}  codigo={r[0:9].hex()}")
 
     def open_session(self):
         """Abre a sessão de app enviando f0 f0 01 <código> 10 00 (§3.4).
@@ -244,6 +256,9 @@ def main():
         if cmd == "quit": break
         elif cmd in CMD_MAP:
             r.send(r.SID, CMD_MAP[cmd])
+        elif cmd == "events":
+            for pg in range(8):
+                r.send(r.SID, bytes.fromhex("3900")+bytes([pg]))
         elif cmd.startswith("bypass "):
             z = cmd.split()[1]  # 8 dígitos 0/1, ex.: bypass 00100000 (zona 3)
             if len(z) == 8 and set(z) <= {"0","1"}:
