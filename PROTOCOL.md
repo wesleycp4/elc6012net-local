@@ -114,14 +114,17 @@ igual ao `40 1e`. Ex.: `40 1f ff 00 00 01 00 00 00 00 00` anula só a zona 3.
 Relay→central: `39 00 <página 0..7>`; a central responde com a página de eventos,
 cada registro com 15 bytes = código Contact-ID (9B) + timestamp `DD MM YY HH MM SS`.
 
-### 4.5 Comandos observados (função inferida do vídeo)  🟡
-- `45 af <pgm> <estado>` (relay→central) — **acionar saída PGM** (ex.: `45 af 01 01`
-  = PGM 1 ligar). Capturado com a tela de PGM aberta no app. Falta confirmar o
-  mapeamento exato de `<pgm>`/`<estado>`.
-- `40 1a 01` (relay→central) — provável **pânico/emergência** (capturado no menu
-  Emergência/Sirene do app). A confirmar qual ação exata.
+### 4.5 Pânico — comando `40 1a`  ✅
+Relay→central: `40 1a 01` dispara o pânico/emergência (a central entra em disparo
+imediatamente). Confirmado em teste.
 
-### 4.6 Eventos — comando `10 b2`  ✅
+### 4.6 Acionar PGM — comando `45 af`  🟡
+Relay→central: `45 af <pgm> <estado>` (ex.: `45 af 01 01`). Aciona uma saída
+programável (PGM), que a central só aceita se a PGM estiver no modo "acesso via
+app". No teste deu erro (PGM não habilitada). Ordem exata de `<pgm>`/`<estado>`
+ainda a confirmar com a PGM habilitada.
+
+### 4.7 Eventos — comando `10 b2`  ✅
 Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
 Contact-ID, com dois timestamps. Relay responde `f0 fe`. É o que gera as
 notificações. Decodificação detalhada de cada código: 🟡 (parcial).
