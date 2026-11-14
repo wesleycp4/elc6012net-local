@@ -18,9 +18,9 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Arme/desarme/choque `40 1e` | ✅ | partições 1 / 2 / 255 |
 | Eventos `10 b2` | 🟡 | chega e é confirmado; faltam decodificar todos os códigos |
 | Histórico `39 00` | ✅ | leitura por página; registro = Contact-ID + timestamp |
-| Keepalive `f0 fd`/`f0 f1` | ✅ | central pinga, relay responde; implementado no relay |
+| Keepalive `f0 f1`/`f0 fd` | ✅ | **servidor pinga `f0 f1`, central responde `f0 fd`/`f0 fe`**; relay pinga proativamente |
 | Registro `3f 94` | ✅ | MAC + modelo, sem auth |
-| Pânico `40 1a 01` | ✅ | dispara emergência; confirmado em teste |
+| Pânico `40 1a 01` | ✅ | dispara emergência; confirmado. `40 1a 00` observado, efeito não confirmado |
 | Acionar PGM `45 af` | ✅ | `45 af <pgm base-0> <estado>`; confirmado (PGM no modo app) |
 | Sinal Wi-Fi `[163]` (RSSI com sinal) | 🟡 | consistente, falta medição independente |
 | Bypass `40 1f` | ✅ | `40 1f ff <z1..z8>`, confirmado em captura |
@@ -39,13 +39,14 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 ## Relay local
 | Item | Status |
 |---|---|
-| Enquadramento (leitura/escrita de frames) | ✅ validado contra frames reais |
+| Enquadramento (leitura/escrita de frames) | ✅ tam 2 bytes BE; validado contra frames reais (inclui bloco >255B) |
 | Registro + hora | 🟡 implementado, falta validar ao vivo |
 | Abertura de sessão `f0 f0` | ✅ decodificado: `f0 f0 01 <código> 10 00` (código em texto claro); implementado no relay via `--code` |
+| Keepalive `f0 f1` proativo | ✅ relay pinga a sessão; central responde `f0 fd`/`f0 fe` |
 | Status + comando | 🟡 implementado (após abrir sessão), falta validar ao vivo |
 | Bypass / PGM / config via relay | ⬜ depende dos testes acima |
 | Integração MQTT → Home Assistant local | ⬜ planejado |
-| Interface web (painel no relay) | 🟡 implementada na branch `experimental`; falta validar ao vivo |
+| Interface web (painel no relay) | 🟡 implementada (`--web`); falta validar ao vivo |
 
 ---
 

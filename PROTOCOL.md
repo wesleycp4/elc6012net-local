@@ -39,12 +39,20 @@ Frames de controle:
 total = 7 + tam     checksum = XOR(todos os bytes anteriores) ^ 0xFF
 ```
 
-- `sessão` = `00 00 00 00` na conexão base da central; `00 00 00 01` (e 02, 03…)
-  para sessões de app. A central ecoa a sessão com os dois primeiros bytes
-  trocados (`00 00 00 01` do relay ⇄ `00 01 00 00` da central). 🟡
+- `sessão` = **índice da sessão de app**, não um contador por mensagem. ✅ Vale
+  `00 00 00 00` na conexão base (registro, hora, tiques `f0 fe`) e `00 00 00 0N`
+  durante a sessão de app N (N=1 na 1ª sessão; vira 02, 03… se a sessão reabrir).
+  Dentro de uma sessão o índice é **fixo**: `f0 f0`, `0b 4a`, `40 1e`, `f0 f1`
+  todos usam o mesmo `00 00 00 0N`. A central ecoa com os dois primeiros bytes
+  trocados (`00 00 00 01` do relay ⇄ `00 01 00 00` da central).
 - **Exceção — resposta de status (`0b 4a`):** o campo `tam` vale o total (164) e
   **não há checksum** nesse firmware (placa 1.1.0 / módulo 1.2.11). Outros
   firmwares mandam 165 com checksum. 🟡 (ver §4.1 do projeto rhacius)
+- **Checksum só nos frames que o relay envia.** 🟡 O XOR^0xFF acima vale para
+  relay→central; nos frames que a **central** manda, o byte final frequentemente
+  não bate com esse algoritmo (a central usa outro cálculo, e o status 164B nem
+  tem checksum). O relay por isso **nunca valida** o checksum do que recebe —
+  validar descartaria frames válidos.
 
 Exemplos reais (✅):
 
@@ -74,8 +82,12 @@ Ordem observada ao conectar (✅):
    de 6 dígitos ocupa 6 bytes entre o prefixo `01` e o sufixo `10 00`). Por isso o
    código fica exposto na captura; o relay recebe o código em tempo de execução
    (`--code`), nunca embutido.
-5. **Keepalive de sessão** ✅ — durante a sessão, a central envia `f0 fd` a cada
-   ~5 s e o relay responde `f0 f1`. Sem a resposta, a central encerra a sessão.
+5. **Keepalive de sessão** ✅ — **quem pinga é o servidor** (nuvem/relay). Durante
+   a sessão ele envia `f0 f1` (na sessão de app `00 00 00 0N`) e a central responde
+   `f0 fd` ou `f0 fe` ~0,1–0,8 s depois. Na conexão base (`00 00 00 00`) o servidor
+   também emite `f0 fe` como tique periódico. Ou seja, o relay precisa **pingar
+   proativamente**; a central não inicia keepalive, só responde. (Modelo invertido
+   — relay respondendo `f0 f1` a um `f0 fd` da central — não mantém a sessão.)
 
 ---
 
@@ -116,7 +128,9 @@ cada registro com 15 bytes = código Contact-ID (9B) + timestamp `DD MM YY HH MM
 
 ### 4.5 Pânico — comando `40 1a`  ✅
 Relay→central: `40 1a 01` dispara o pânico/emergência (a central entra em disparo
-imediatamente). Confirmado em teste.
+imediatamente). Confirmado em teste (vídeo + captura mapa3).
+Também foi observado `40 1a 00` numa captura (mapa) **sem efeito confirmado** —
+possivelmente consulta/cancelamento; semântica em aberto. 🟡 O relay só usa o `01`.
 
 ### 4.6 Acionar PGM — comando `45 af`  ✅
 Relay→central: `45 af <pgm> <estado>`, PGM **base-0** (`00` = PGM1, `01` = PGM2),

@@ -20,7 +20,7 @@ Comandos no terminal (stdin): arm | disarm | shockon | shockoff | allon |
 NÃO É PRODUÇÃO: enquanto isto roda, a central não fala com a Intelbras
 (sem notificações pela nuvem deles). Teste com a cerca ciente disso.
 """
-import argparse, json, socket, sys, threading, time
+import argparse, json, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
 
@@ -30,7 +30,9 @@ def xck(body: bytes) -> int:
     return c ^ 0xff
 
 def build(session: bytes, payload: bytes) -> bytes:
-    body = session + b"\x00" + bytes([len(payload)]) + payload
+    # campo de tamanho = 2 bytes big-endian (len do payload). Para payloads <=255
+    # dá o mesmo byte-a-byte da captura; para blocos de config (>255B) fica correto.
+    body = session + struct.pack(">H", len(payload)) + payload
     return body + bytes([xck(body)])
 
 def bcd(n: int) -> int:
@@ -82,12 +84,15 @@ class Relay:
         print(f"  -> {frame.hex(' ')}")
 
     def frames(self):
-        """Extrai frames do buffer. 0b4a (status) = len no campo; resto = 7+len."""
+        """Extrai frames do buffer. 0b4a (status) = len no campo; resto = 7+len.
+        NÃO validamos o checksum recebido: a central usa um algoritmo diferente do
+        nosso xck() nos frames que ELA envia (e o status 164B nem tem checksum).
+        Validar aqui descartaria frames válidos. Só calculamos xck ao ENVIAR."""
         while len(self.buf) >= 8:
-            L = self.buf[5]
+            L = (self.buf[4] << 8) | self.buf[5]   # tamanho = 2 bytes big-endian
             cmd = self.buf[6:8]
             if cmd == b"\x0b\x4a" and L == 0xa4:
-                total = (self.buf[4] << 8) | self.buf[5]     # 164, status sem checksum
+                total = L                 # status 164B: campo = total, SEM checksum
             else:
                 total = 7 + L
             if len(self.buf) < total:
@@ -112,8 +117,8 @@ class Relay:
             mac = frame[11:17].hex(":")
             print(f"[REGISTRO] central MAC={mac} modelo={frame[17]:02x} -> ack")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
-        elif c == "f0fd":                    # keepalive da central -> responde f0f1
-            self.send(self.SID, bytes.fromhex("f0f1"))
+        elif c in ("f0fd", "f0fe"):          # central respondeu ao keepalive/tick: nada a fazer
+            pass                              # quem pinga é o servidor (ver keepalive()); isto é só o ack
         elif c == "3900":                    # resposta de histórico de eventos
             self._hist(frame[8:])
         elif c == "f0f7":
@@ -162,6 +167,16 @@ class Relay:
             if self.sock:
                 if not self.session_opened: continue
                 try: self.send(self.SID, CMD_MAP["status"])
+                except OSError: return
+
+    def keepalive(self, interval):
+        """Mantém a sessão viva. Na captura QUEM PINGA É O SERVIDOR (nuvem):
+        envia f0f1 na sessão de app e a central responde f0fd/f0fe. O relay faz
+        o mesmo papel — pinga proativamente; não espera a central pingar."""
+        while True:
+            time.sleep(interval)
+            if self.sock and self.session_opened:
+                try: self.send(self.SID, bytes.fromhex("f0f1"))
                 except OSError: return
 
 
@@ -227,6 +242,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--listen", default="0.0.0.0:9009")
     ap.add_argument("--poll", type=int, default=15)
+    ap.add_argument("--keepalive", type=int, default=10, help="intervalo do ping f0f1 de sessão (s)")
     ap.add_argument("--web", type=int, default=0, help="porta do painel web (0 = desligado)")
     ap.add_argument("--code", default="", help="código de acesso (dígitos) p/ abrir a sessão")
     ns = ap.parse_args()
@@ -249,6 +265,7 @@ def main():
             r.sock = conn
             threading.Thread(target=r.reader, daemon=True).start()
             threading.Thread(target=r.poller, args=(ns.poll,), daemon=True).start()
+            threading.Thread(target=r.keepalive, args=(ns.keepalive,), daemon=True).start()
     threading.Thread(target=accept_loop, daemon=True).start()
 
     for line in sys.stdin:
@@ -257,6 +274,8 @@ def main():
         elif cmd in CMD_MAP:
             r.send(r.SID, CMD_MAP[cmd])
         elif cmd == "panic":
+            # 40 1a 01 = dispara emergência (confirmado em captura+vídeo).
+            # 40 1a 00 também foi observado, mas o efeito não foi confirmado — não usamos.
             print("[!] PÂNICO — dispara a sirene/alarme")
             r.send(r.SID, bytes.fromhex("401a01"))
         elif cmd.startswith("pgm "):   # pgm <1|2> <on|off> (ordem dos params a confirmar)

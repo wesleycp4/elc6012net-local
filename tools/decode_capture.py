@@ -3,8 +3,10 @@
 decode_capture.py — decodifica uma captura (.pcap) do protocolo ELC 6012 NET
 (central <-> relay/nuvem, TCP 9009). Projeto: elc6012net-local. Stdlib pura.
 
-Mascara automaticamente SSID e senha de Wi-Fi (bloco de config 02 c0) para a
-saída poder ser compartilhada com segurança. Protocolo: ver ../PROTOCOL.md.
+Mascara automaticamente segredos (Wi-Fi 02c0, usuários/código 0400, e a
+abertura de sessão f0f0 que leva o código em claro) para a saída poder ser
+compartilhada com segurança. Mesmo assim, NÃO publique .pcap bruto: ele contém
+o código e a senha em texto claro. Protocolo: ver ../PROTOCOL.md.
 
 Uso:  python3 decode_capture.py captura.pcap [--port 9009]
 """
@@ -17,8 +19,13 @@ PART = {0x01: "alarme", 0x02: "choque", 0xff: "tudo(255)"}
 BLOCKS = {  # addr -> (nome, sensivel?)
     "0000": ("zonas", False), "02b0": ("nome", False),
     "02c0": ("wifi(SSID+senha)", True), "03e0": ("config geral", False),
-    "0400": ("usuarios", False),
+    "0400": ("usuarios(+codigo)", True),   # tem o código/PINs em claro -> sensível
 }
+
+import re
+def mask_digits(s):
+    """Esconde sequências longas de dígitos (códigos/PINs) de qualquer preview."""
+    return re.sub(r"\d{4,}", lambda m: "#" * len(m.group()), s)
 ZONE_ATTR = [(0x01,"habilitada"),(0x02,"inteligente"),(0x04,"temporizada"),
              (0x10,"silenciosa"),(0x20,"parcial"),(0x40,"24h")]
 
@@ -77,6 +84,10 @@ def decode(path, port):
             note = f"BYPASS (40 1f) dados={body.hex(' ')}"
         elif cmd == "10b2":
             note = f"EVENTO ev={body[6:16].hex()} (contact-id)"
+        elif cmd == "f0f0" and len(body) >= 1:
+            note = "ABERTURA DE SESSAO (f0 f0)  <codigo mascarado>"
+        elif cmd == "401a" and len(pl) >= 9:
+            note = f"PANICO (40 1a {pl[8]:02x})" + ("" if pl[8]==1 else "  [variante 00: efeito nao confirmado]")
         elif cmd in ("3f12", "2f12") and len(body) >= 4:
             addr = body[0:2].hex(); ln = (body[2]<<8)|body[3]; data = body[4:4+ln]
             bname, sens = BLOCKS.get(addr, (f"addr {addr}", False))
@@ -92,7 +103,7 @@ def decode(path, port):
                              f"reportagem={data[14]}")
                 else:
                     txt = "".join(chr(c) if 32<=c<127 else "." for c in data[:24])
-                    extra = f"  '{txt}'"
+                    extra = f"  '{mask_digits(txt)}'"
             else:
                 extra = "  <dados sensíveis mascarados>"
             note = f"{rw} bloco {bname} (addr {addr}, {ln}B){extra}"
