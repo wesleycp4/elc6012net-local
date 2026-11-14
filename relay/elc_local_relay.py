@@ -256,6 +256,15 @@ def main():
         if cmd == "quit": break
         elif cmd in CMD_MAP:
             r.send(r.SID, CMD_MAP[cmd])
+        elif cmd == "panic":
+            print("[!] PÂNICO — dispara a sirene/alarme")
+            r.send(r.SID, bytes.fromhex("401a01"))
+        elif cmd.startswith("pgm "):   # pgm <1|2> <on|off> (ordem dos params a confirmar)
+            pr = cmd.split()
+            if len(pr) == 3 and pr[1] in ("1","2") and pr[2] in ("on","off"):
+                r.send(r.SID, bytes.fromhex("45af") + bytes([int(pr[1]), 1 if pr[2]=="on" else 0]))
+            else:
+                print("uso: pgm <1|2> <on|off>")
         elif cmd == "events":
             for pg in range(8):
                 r.send(r.SID, bytes.fromhex("3900")+bytes([pg]))
