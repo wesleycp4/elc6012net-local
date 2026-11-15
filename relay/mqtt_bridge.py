@@ -25,8 +25,10 @@ CMD = {
 
 class MqttBridge:
     def __init__(self, relay, host, port=1883, user=None, password=None,
-                 node="elc6012net", discovery_prefix="homeassistant"):
+                 node="elc6012net", discovery_prefix="homeassistant",
+                 name="Intelbras ELC 6012 NET"):
         self.relay = relay
+        self.name = name                       # nome do dispositivo no HA
         self.host, self.port = host, port
         self.user, self.password = user, password
         self.node = node                       # id único do dispositivo no HA
@@ -44,7 +46,7 @@ class MqttBridge:
     @property
     def _device(self):
         return {"identifiers": [f"elc6012_{self.node}"],
-                "name": "Intelbras ELC 6012 NET",
+                "name": self.name,
                 "manufacturer": "Intelbras", "model": "ELC 6012 NET"}
 
     def start(self):
@@ -78,7 +80,9 @@ class MqttBridge:
             print(f"[mqtt] conexão recusada (rc={rc})"); return
         self._connected = True
         self._publish_discovery()
-        cli.publish(self.avail_t, "online", qos=1, retain=True)
+        # online só se a central já estiver conectada ao relay (num App o broker
+        # sobe antes da central conectar)
+        cli.publish(self.avail_t, "online" if self.relay.sock else "offline", qos=1, retain=True)
         for obj in ("cerca", "alarme"):
             cli.subscribe(self._cmd_t(obj), qos=1)
         print("[mqtt] conectado; entidades publicadas e comandos assinados")
