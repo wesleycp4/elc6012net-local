@@ -39,12 +39,13 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 ## Relay local
 | Item | Status |
 |---|---|
-| Enquadramento (leitura/escrita de frames) | ✅ tam 2 bytes BE; validado contra frames reais (inclui bloco >255B) |
-| Registro + hora | 🟡 implementado, falta validar ao vivo |
-| Abertura de sessão `f0 f0` | ✅ decodificado: `f0 f0 01 <código> 10 00` (código em texto claro); implementado no relay via `--code` |
-| Keepalive `f0 f1` proativo | ✅ relay pinga a sessão; central responde `f0 fd`/`f0 fe` |
-| Status + comando | 🟡 implementado (após abrir sessão), falta validar ao vivo |
-| Bypass / PGM / config via relay | ⬜ depende dos testes acima |
+| Enquadramento (leitura/escrita de frames) | ✅ **validado ao vivo**; resync por cabeçalho (lida com variante f0fd/f0fe +1 byte) |
+| Registro + hora | ✅ **validado ao vivo** (central registra, pede hora, recebe) |
+| Abertura de sessão `f0 f0` | ✅ **validado ao vivo**: `f0 f0 01 <código> 10 00`; relay via `--code` |
+| Keepalive `f0 f1` proativo | ✅ **validado ao vivo**: relay pinga, sessão fica de pé (6+ min) |
+| Status ao vivo (sem nuvem) | ✅ **validado ao vivo**: choque/alarme/zonas/disparo/relógio/RSSI reais |
+| Comandos (arme/choque) via relay | 🟡 enviados ao vivo (`40 1e`); falta confirmar efeito físico |
+| Bypass / PGM / pânico via relay | ⬜ implementado; falta validar ao vivo |
 | Integração MQTT → Home Assistant local | ⬜ planejado |
 | Interface web (painel no relay) | 🟡 implementada (`--web`); falta validar ao vivo |
 

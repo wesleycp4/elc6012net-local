@@ -48,11 +48,17 @@ total = 7 + tam     checksum = XOR(todos os bytes anteriores) ^ 0xFF
 - **Exceção — resposta de status (`0b 4a`):** o campo `tam` vale o total (164) e
   **não há checksum** nesse firmware (placa 1.1.0 / módulo 1.2.11). Outros
   firmwares mandam 165 com checksum. 🟡 (ver §4.1 do projeto rhacius)
-- **Checksum só nos frames que o relay envia.** 🟡 O XOR^0xFF acima vale para
-  relay→central; nos frames que a **central** manda, o byte final frequentemente
-  não bate com esse algoritmo (a central usa outro cálculo, e o status 164B nem
-  tem checksum). O relay por isso **nunca valida** o checksum do que recebe —
-  validar descartaria frames válidos.
+- **Checksum só nos frames que o relay envia.** ✅ (confirmado ao vivo) O XOR^0xFF
+  acima vale para relay→central; nos frames que a **central** manda ele **não
+  bate** (ex.: `f0 fe` vem com `f1`, mas o XOR^0xFF daria `f2`), e o status 164B
+  nem tem checksum. O relay por isso **nunca valida** o checksum recebido.
+- **Enquadramento por re-sincronização.** ✅ A central às vezes manda `f0 fd`/`f0 fe`
+  com um byte `00` a mais, mas mantém o campo `tam`=`00 02` — então `7+tam`
+  consome 1 byte a menos. Como o checksum não serve de âncora, o relay valida o
+  **cabeçalho** de cada frame (`00 0N 00 00` + comando conhecido) e, se o próximo
+  byte não for um cabeçalho válido, descarta-o e realinha. Um `f0 fd`/`f0 fe`
+  fica no máximo 1 byte torto (é só ack), e status/eventos/comandos voltam a cair
+  certos. Validado contra o tráfego do teste ao vivo (146 frames, 92 status).
 
 Exemplos reais (✅):
 

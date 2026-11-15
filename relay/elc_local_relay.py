@@ -55,6 +55,17 @@ def decode_status(p: bytes):
     rel    = f"{p[72]:02d}/{p[73]:02d}/{p[74]:02d} {p[75]:02d}:{p[76]:02d}:{p[77]:02d}"
     return f"choque={choque} alarme={alarme} zonas={zonas} disparo={disp} sinal=-{sig}dBm relogio={rel}"
 
+# comandos que a CENTRAL envia para o relay (usados para re-sincronizar frames)
+RX_CMDS = {b"\x0b\x4a", b"\xf0\xfd", b"\xf0\xfe", b"\xf0\xf0", b"\xf0\xf7",
+           b"\xf0\xf1", b"\xf0\x80", b"\x3f\x94", b"\x39\x00", b"\x10\xb2",
+           b"\x40\x1e", b"\x40\x1f", b"\x40\x1a", b"\x45\xaf",
+           b"\x2f\x12", b"\x3f\x12"}
+
+def valid_header(b: bytes) -> bool:
+    """Cabeçalho plausível: sessão `00 0N 00 00` + comando conhecido."""
+    return (len(b) >= 8 and b[0] == 0 and b[2] == 0 and b[3] == 0
+            and b[1] <= 0x0f and b[6:8] in RX_CMDS)
+
 CMD_MAP = {
     "arm":      bytes.fromhex("401e0101"),   # alarme on  (part 1)
     "disarm":   bytes.fromhex("401e0100"),   # alarme off
@@ -71,24 +82,38 @@ class Relay:
         self.lock = threading.Lock()
         self.buf = b""
         self.last_status = {}
+        self._last_status_key = None
         self.code = b""          # dígitos do código de acesso (bytes 0-9)
         self.session_opened = False
         self.SID = b"\x00\x00\x00\x01"  # índice de sessão deste relay
 
-    def send(self, session: bytes, payload: bytes):
-        if not self.sock: 
+    def send(self, session: bytes, payload: bytes, quiet: bool = False):
+        if not self.sock:
             print("[!] central não conectada ainda"); return
         frame = build(session, payload)
         with self.lock:
             self.sock.sendall(frame)
-        print(f"  -> {frame.hex(' ')}")
+        if not quiet:                      # poll/keepalive passam quiet=True (não poluem o terminal)
+            print(f"  -> {frame.hex(' ')}")
 
     def frames(self):
-        """Extrai frames do buffer. 0b4a (status) = len no campo; resto = 7+len.
-        NÃO validamos o checksum recebido: a central usa um algoritmo diferente do
-        nosso xck() nos frames que ELA envia (e o status 164B nem tem checksum).
-        Validar aqui descartaria frames válidos. Só calculamos xck ao ENVIAR."""
+        """Extrai frames do buffer, re-sincronizando pelo cabeçalho.
+
+        Por que não usar só 7+len nem o checksum:
+        - A central às vezes manda f0fd/f0fe com um byte 00 extra, mas o campo de
+          tamanho continua `00 02` — então 7+len consome 1 byte a menos e sobra
+          lixo (observado no teste ao vivo).
+        - O checksum recebido NÃO é o nosso xck (ex.: f0fe vem com f1, xck daria
+          f2) e o status 164B nem tem checksum — não serve de âncora.
+        Então, a cada frame, exigimos um cabeçalho plausível (`00 0N 00 00` +
+        comando conhecido). Se o próximo byte não for um cabeçalho válido (o byte
+        extra), descartamos 1 byte e realinhamos no próximo frame. Isso se
+        autocorrige: um f0fd/f0fe fica no máx. 1 byte torto (é só ack, não
+        importa) e status/eventos/comandos voltam a cair certo."""
         while len(self.buf) >= 8:
+            if not valid_header(self.buf):
+                self.buf = self.buf[1:]            # ressync: pula byte de lixo
+                continue
             L = (self.buf[4] << 8) | self.buf[5]   # tamanho = 2 bytes big-endian
             cmd = self.buf[6:8]
             if cmd == b"\x0b\x4a" and L == 0xa4:
@@ -103,7 +128,11 @@ class Relay:
     def handle(self, frame: bytes, cmd: bytes):
         c = cmd.hex()
         if c == "0b4a":                      # resposta de status
-            print(f"[STATUS] {decode_status(frame)}")
+            # imprime só quando o ESTADO muda (ignora relógio/RSSI, que mudam sempre)
+            key = frame[30:32] + frame[46:48] + frame[54:56] + frame[62:64] if len(frame) >= 164 else frame
+            if key != self._last_status_key:
+                print(f"[STATUS] {decode_status(frame)}")
+                self._last_status_key = key
             if len(frame) >= 164:
                 self.last_status = {
                     "choque": bool(frame[30] & 1), "alarme": bool(frame[31] & 1),
@@ -166,7 +195,7 @@ class Relay:
             time.sleep(interval)
             if self.sock:
                 if not self.session_opened: continue
-                try: self.send(self.SID, CMD_MAP["status"])
+                try: self.send(self.SID, CMD_MAP["status"], quiet=True)
                 except OSError: return
 
     def keepalive(self, interval):
@@ -179,7 +208,7 @@ class Relay:
         while True:
             time.sleep(interval)
             if self.sock and self.session_opened:
-                try: self.send(self.SID, bytes.fromhex("f0f1"))
+                try: self.send(self.SID, bytes.fromhex("f0f1"), quiet=True)
                 except OSError: return
 
 
