@@ -1,0 +1,3 @@
+# O relay usa só a biblioteca padrão do Python.
+# Dependência OPCIONAL, apenas para a integração MQTT com o Home Assistant (--mqtt):
+paho-mqtt>=1.6

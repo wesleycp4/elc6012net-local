@@ -17,7 +17,8 @@ redirecione o servidor da nuvem para este relay, por DNS ou DNAT:
         dnat to 10.0.0.1:9009
     python3 elc_local_relay.py --listen 0.0.0.0:9009 --web 8080
 
-Controle: painel web em http://127.0.0.1:8080 (via principal), ou stdin:
+Controle: painel web em http://127.0.0.1:8080 (via principal), Home Assistant via
+MQTT (--mqtt, ver docs/homeassistant.md), ou stdin:
     arm | disarm | shockon | shockoff | allon | alloff | status |
     panic [0-3] | sirenoff | pgm <1|2> <on|off> | bypass <8 dígitos> |
     events | raw <hex> | quit
@@ -102,6 +103,7 @@ class Relay:
         self.SID = b"\x00\x00\x00\x01"  # índice de sessão deste relay
         self._pending_cmd = None        # (opcode, ts, retry) do comando, p/ detectar NACK
         self._last_control = None       # último payload de controle, p/ reenviar numa recusa
+        self.mqtt = None                # ponte MQTT→Home Assistant (opcional, --mqtt)
 
     def send(self, session: bytes, payload: bytes, quiet: bool = False):
         if not self.sock:
@@ -155,6 +157,8 @@ class Relay:
                     "zonas": frame[46:48].hex(), "disparo": frame[54:56].hex(),
                     "bypass": frame[62:64].hex(),
                     "ts": datetime.now().strftime("%H:%M:%S")}
+                if self.mqtt:
+                    self.mqtt.publish_state(self.last_status)
         elif c == "10b2":                    # central reportando evento
             print(f"[EVENTO] {frame[8:].hex(' ')}")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
@@ -206,7 +210,9 @@ class Relay:
             except OSError:
                 break
             if not data:
-                print("[!] central desconectou"); break
+                print("[!] central desconectou")
+                if self.mqtt: self.mqtt.set_available(False)
+                break
             if self.sock is not conn:
                 break
             self.buf += data
@@ -320,12 +326,23 @@ def main():
     ap.add_argument("--session-hex", default=SESSION_OPEN_HEX,
                     help="payload da abertura de sessão de controle (hex); padrão = o da nuvem real")
     ap.add_argument("--code", default="", help="(ignorado) a central não autentica o servidor; mantido p/ compatibilidade")
+    ap.add_argument("--mqtt", default="", help="broker MQTT p/ Home Assistant: host[:porta] (porta padrão 1883)")
+    ap.add_argument("--mqtt-user", default=None)
+    ap.add_argument("--mqtt-pass", default=None)
+    ap.add_argument("--mqtt-node", default="elc6012net", help="id do dispositivo no HA")
     ns = ap.parse_args()
     host, port = ns.listen.rsplit(":", 1)
     r = Relay()
     r.session_open = bytes.fromhex(ns.session_hex.replace(" ", ""))
     if ns.code:
         print("[i] --code é ignorado: a sessão de controle não usa o código (a central não autentica o servidor).")
+    if ns.mqtt:
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from mqtt_bridge import MqttBridge
+        mh, _, mp = ns.mqtt.partition(":")
+        r.mqtt = MqttBridge(r, mh, int(mp or 1883), ns.mqtt_user, ns.mqtt_pass, ns.mqtt_node)
+        r.mqtt.start()
     if ns.web:
         start_web(r, ns.web)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -352,6 +369,7 @@ def main():
             if old:
                 try: old.close()
                 except OSError: pass
+            if r.mqtt: r.mqtt.set_available(True)
             threading.Thread(target=r.reader, args=(conn,), daemon=True).start()
             threading.Thread(target=r.poller, args=(conn, ns.poll), daemon=True).start()
     threading.Thread(target=accept_loop, daemon=True).start()

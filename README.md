@@ -28,8 +28,11 @@ Assistant, sem nuvem nenhuma.
   PGMs, usuários, Wi-Fi) — leitura/escrita de blocos de memória.
 - ✅ **Relay local** (`relay/elc_local_relay.py`): enquadramento com re-sincronização,
   sessão de controle, status ao vivo, painel web e retry automático na recusa.
-- 🟡 Bypass e PGM via relay (implementados, faltam testes), PGM temporizada.
-- ⬜ Integração MQTT → Home Assistant local, pareamento de sensor.
+- ✅ **Integração Home Assistant local** via MQTT Discovery (`relay/mqtt_bridge.py`):
+  cria as entidades sozinho, controla sem nuvem/internet — ver [docs/homeassistant.md](docs/homeassistant.md).
+- 🟡 Bypass e PGM via relay (implementados, faltam testes), PGM temporizada,
+  mapeamento de bits de zona.
+- ⬜ Pareamento de sensor sem fio; opcodes extras (PROTOCOL §6).
 
 Mapa completo e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
 

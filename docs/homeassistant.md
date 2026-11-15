@@ -15,15 +15,37 @@ a central conecta nele e passa a ser controlada 100% localmente. **O controle
 (arme/desarme/choque/tudo) já está confirmado ao vivo** pelo painel web/stdin do
 relay (ver [STATUS](STATUS.md)). Falta a ponte para o Home Assistant.
 
-### Caminho para o HA local (próximo passo)
-O relay já expõe `GET /status` (JSON) e `POST /cmd/<nome>`. Duas opções:
+### Integração local via MQTT Discovery (pronta)
+O relay traz uma ponte MQTT (`relay/mqtt_bridge.py`) que cria as entidades no HA
+automaticamente (MQTT Discovery), publica o estado quando a central muda e recebe
+os comandos — **tudo local, sem nuvem e sem internet**.
 
-- **Stopgap sem mexer no relay:** integrações nativas do HA apontando pro relay —
-  `rest_command` para os `POST /cmd/*`, sensor `rest` lendo `/status`, e
-  `template`/`switch`/`binary_sensor` para choque, alarme e disparo.
-- **Alvo (limpo):** adicionar **MQTT Discovery** ao relay (publica em mudança de
-  estado, assina um tópico de comando → aciona o controle), espelhando as entidades
-  do add-on de nuvem acima (`alarm_control_panel`, `switch.choque`,
-  `binary_sensor.zona_1..8`, `switch.bypass_zona_1..8`, `event`) para migração
-  transparente. A fazer no relay: disponibilidade/frescor (online + idade do
-  status), zonas/bypass decodificados por bit, e publicação dos eventos `10 b2`.
+Entidades criadas: `switch.cerca` (choque), `alarm_control_panel.alarme`
+(armar/desarmar, estado `disparo`→`triggered`), `binary_sensor.disparo` e
+`binary_sensor.zona_1..8`.
+
+**Passo a passo:**
+1. Tenha um broker MQTT na rede — no HA OS, instale o add-on **Mosquitto broker** e
+   a integração **MQTT** (a descoberta já vem ligada).
+2. No gateway onde roda o relay: `pip install paho-mqtt`.
+3. Rode o relay apontando pro broker:
+   ```bash
+   python3 relay/elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 \
+       --mqtt SEU_BROKER:1883 --mqtt-user USUARIO --mqtt-pass SENHA
+   ```
+4. As entidades aparecem sozinhas no HA (dispositivo "Intelbras ELC 6012 NET").
+   Se a internet cair, continua tudo funcionando — a central fala com o relay e o
+   relay com o HA, tudo na sua LAN.
+
+A disponibilidade segue a central (online/offline via LWT). O mapeamento dos bits
+de zona (`zona_1..8`) é o melhor palpite atual — confira qual zona física acende
+cada sensor e ajuste se precisar.
+
+### Alternativa sem MQTT (stopgap)
+Sem broker, dá pra usar as integrações nativas do HA apontando pro relay:
+`rest_command` para os `POST /cmd/*` e um sensor `rest` lendo `GET /status`
+(porém com polling e sem descoberta automática).
+
+### A evoluir no relay (contribuições)
+Zonas/bypass por bit confirmados, publicação dos eventos `10 b2` como entidade
+`event`, e `switch.bypass_zona_1..8`.
