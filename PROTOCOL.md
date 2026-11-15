@@ -96,12 +96,14 @@ Ordem observada ao conectar (✅):
    ⚠️ Existe também a variante `f0 f0 01 <dígitos> 10 00`, que abre uma sessão de
    **só leitura**: a central responde status mas dá **NACK (`f0 fd`) em `40 1e`** e
    outros comandos. Use sempre a sessão de controle acima para arme/desarme/choque.
-5. **Keepalive de sessão** ✅ — **quem pinga é o servidor** (nuvem/relay). Durante
-   a sessão ele envia `f0 f1` (na sessão de app `00 00 00 0N`) e a central responde
-   `f0 fd` ou `f0 fe` ~0,1–0,8 s depois. Na conexão base (`00 00 00 00`) o servidor
-   também emite `f0 fe` como tique periódico. Ou seja, o relay precisa **pingar
-   proativamente**; a central não inicia keepalive, só responde. (Modelo invertido
-   — relay respondendo `f0 f1` a um `f0 fd` da central — não mantém a sessão.)
+5. **Manter a sessão (e o que NÃO fazer)** ✅ — a sessão de controle se mantém com
+   (a) a central mandando `f0 f7` e o servidor respondendo `f0 fe`, e (b) os polls de
+   status `0b 4a`. ⚠️ **`f0 f1` é DISCONNECT, não keepalive**: o servidor manda
+   `f0 f1` para **encerrar** a sessão de controle (a central confirma com `f0 fe`) e
+   depois reabre com `f0 f0` antes do próximo comando. Mandar `f0 f1` "de keepalive"
+   **derruba a sessão** — o status continua (não depende dela), mas o comando
+   seguinte volta **NACK `0x21`**. Por isso o relay **nunca** manda `f0 f1` e
+   **reabre a sessão (`f0 f0`) antes de cada comando**, como o app faz.
 
 ---
 
@@ -170,6 +172,23 @@ PGM = saída programável (contato que aciona um aparelho externo: portão, luz�
 Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
 Contact-ID, com dois timestamps. Relay responde `f0 fe`. É o que gera as
 notificações. Decodificação detalhada de cada código: 🟡 (parcial).
+
+### 4.9 Recusa de comando — `f0 fd <código>`  ✅
+Quando a central **recusa** um comando (`40 1e`, `40 1f`, `45 af`, `40 1a`) ela
+responde `f0 fd <código>` ~0,1 s depois, em vez de executar (o status não muda).
+Códigos observados:
+- **`0x21`** — **comando sem sessão de controle válida**. Principal causa no nosso
+  caso: a sessão foi derrubada por um `f0 f1` (ver §3.5) e o comando caiu numa
+  sessão fechada. Prova (captura do relay): `f0 f1` em t=10,1 s (central ACK o
+  disconnect) → `40 1e` em t=13,1 s → `f0 fd 21`. A nuvem/app nunca manda `f0 f1`
+  entre abrir e comandar, então nunca vê `0x21`. O mesmo código aparece na PGM
+  (`45 af`) fora do modo "acesso via app" — ou seja, "sem permissão/sessão para
+  esta função". **Solução:** não mandar `f0 f1` e reabrir a sessão antes do comando.
+- **`0x3f`** — visto no bypass (`40 1f`) recusado.
+
+Um `f0 fd` de **keepalive** é diferente: o byte final é o checksum válido (xck), não
+um código de recusa. O relay distingue os dois e loga `[RECUSADO] code 0xNN` só na
+recusa real.
 
 ### 4.8 Desligar sirene — comando `40 19`  ⬜
 Relay→central: `40 19` silencia a sirene sem desarmar. Byte do comando conhecido

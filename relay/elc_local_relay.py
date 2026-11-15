@@ -95,6 +95,7 @@ class Relay:
         self.session_open = bytes.fromhex(SESSION_OPEN_HEX)
         self.session_opened = False
         self.SID = b"\x00\x00\x00\x01"  # índice de sessão deste relay
+        self._pending_cmd = None        # (opcode, ts) do último comando, p/ detectar NACK
 
     def send(self, session: bytes, payload: bytes, quiet: bool = False):
         if not self.sock:
@@ -102,6 +103,8 @@ class Relay:
         frame = build(session, payload)
         with self.lock:
             self.sock.sendall(frame)
+        if payload[:2] in (b"\x40\x1e", b"\x40\x1f", b"\x45\xaf", b"\x40\x1a"):
+            self._pending_cmd = (payload[:2].hex(), time.time())   # p/ casar com um NACK
         if not quiet:                      # poll/keepalive passam quiet=True (não poluem o terminal)
             print(f"  -> {frame.hex(' ')}")
 
@@ -155,8 +158,20 @@ class Relay:
             mac = frame[11:17].hex(":")
             print(f"[REGISTRO] central MAC={mac} modelo={frame[17]:02x} -> ack")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
-        elif c in ("f0fd", "f0fe"):          # central respondeu ao keepalive/tick: nada a fazer
-            pass                              # quem pinga é o servidor (ver keepalive()); isto é só o ack
+        elif c in ("f0fd", "f0fe"):          # f0fe=ACK, f0fd=NACK/keepalive-resp
+            # Se acabamos de mandar um comando e veio f0fd logo em seguida, é RECUSA.
+            # O byte após f0fd é o código: 0x21 = função não habilitada p/ app/remoto
+            # (mesmo código que a PGM dá fora do modo "acesso via app"); 0x3f visto no bypass.
+            if c == "f0fd" and self._pending_cmd and time.time() - self._pending_cmd[1] < 1.0:
+                code = frame[8] if len(frame) >= 9 else None
+                op = self._pending_cmd[0]
+                # num keepalive o byte após f0fd é o checksum (xck); num NACK é um
+                # código de recusa que NÃO bate com o xck (ex.: 0x21, 0x3f).
+                if code is not None and code != xck(frame[:8]):
+                    print(f"[RECUSADO] comando {op} -> NACK code 0x{code:02x}. "
+                          f"Provável: função NÃO habilitada para controle via app/remoto na central "
+                          f"(mesmo caso da PGM fora do modo 'acesso via app').")
+                self._pending_cmd = None
         elif c == "3900":                    # resposta de histórico de eventos
             self._hist(frame[8:])
         elif c == "f0f7":
@@ -172,11 +187,17 @@ class Relay:
             print(f"[??] {frame.hex(' ')} -> ack")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
 
-    def reader(self):
-        while True:
-            data = self.sock.recv(4096)
+    def reader(self, conn):
+        # Atado à conexão: sai se outra conexão assumir (a central reconecta no churn de WiFi).
+        while self.sock is conn:
+            try:
+                data = conn.recv(4096)
+            except OSError:
+                break
             if not data:
-                print("[!] central desconectou"); return
+                print("[!] central desconectou"); break
+            if self.sock is not conn:
+                break
             self.buf += data
             for cmd, frame in self.frames():
                 self.handle(frame, cmd)
@@ -196,26 +217,22 @@ class Relay:
         print("[SESSAO] abrindo sessão de controle...")
         self.send(self.SID, self.session_open)
 
-    def poller(self, interval):
-        while True:
+    def poller(self, conn, interval):
+        while self.sock is conn:
             time.sleep(interval)
-            if self.sock:
-                if not self.session_opened: continue
+            if self.sock is conn and self.session_opened:
                 try: self.send(self.SID, CMD_MAP["status"], quiet=True)
                 except OSError: return
 
-    def keepalive(self, interval):
-        """Mantém a sessão viva. Na captura QUEM PINGA É O SERVIDOR (nuvem):
-        envia f0f1 na sessão de app e a central responde f0fd/f0fe. O relay faz
-        o mesmo papel — pinga proativamente; não espera a central pingar.
-        (Nota: o enum do APK em bobaoapae chama f0f1 de DISCONNECT e f0f7 de
-        KEEP_ALIVE, mas na nossa captura do leg central↔nuvem a nuvem envia f0f1
-        repetidamente SEM derrubar a sessão. Confirmar no teste ao vivo.)"""
-        while True:
-            time.sleep(interval)
-            if self.sock and self.session_opened:
-                try: self.send(self.SID, bytes.fromhex("f0f1"), quiet=True)
-                except OSError: return
+    def control(self, payload):
+        """Envia um comando de controle REABRINDO a sessão antes (como o app faz).
+        A sessão de controle é mantida só respondendo o f0f7 da central (f0fe) + os
+        polls de status. NUNCA mandamos f0f1 (f0f1 = DISCONNECT: derruba a sessão de
+        controle e o próximo comando volta NACK 0x21)."""
+        if not self.sock:
+            print("[!] central não conectada ainda"); return
+        self.send(self.SID, self.session_open, quiet=True)   # reabre a sessão de controle
+        self.send(self.SID, payload)                          # manda o comando
 
 
 PANEL_HTML = """<!doctype html><html lang=pt-br><head><meta charset=utf-8>
@@ -268,19 +285,22 @@ def start_web(relay, port):
                 self._send(200, PANEL_HTML)
         def do_POST(self):
             name = self.path.rsplit("/", 1)[-1]
-            if name in CMD_MAP:
-                relay.send(relay.SID, CMD_MAP[name]); self._send(200, "ok", "text/plain")
+            if name == "status":
+                relay.send(relay.SID, CMD_MAP["status"]); self._send(200, "ok", "text/plain")
+            elif name in CMD_MAP:
+                relay.control(CMD_MAP[name]); self._send(200, "ok", "text/plain")
             else:
                 self._send(404, "comando desconhecido", "text/plain")
-    httpd = HTTPServer(("0.0.0.0", port), H)
-    print(f"[web] painel em http://0.0.0.0:{port}")
+    # bind em localhost: o painel aciona a cerca; não exponha na rede sem auth
+    httpd = HTTPServer(("127.0.0.1", port), H)
+    print(f"[web] painel em http://127.0.0.1:{port}  (só local; aciona a cerca)")
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--listen", default="0.0.0.0:9009")
     ap.add_argument("--poll", type=int, default=15)
-    ap.add_argument("--keepalive", type=int, default=10, help="intervalo do ping f0f1 de sessão (s)")
+    ap.add_argument("--keepalive", type=int, default=0, help="(ignorado) f0f1 é DISCONNECT, nunca é enviado; sessão mantida via resposta ao f0f7 + polls")
     ap.add_argument("--web", type=int, default=0, help="porta do painel web (0 = desligado)")
     ap.add_argument("--session-hex", default=SESSION_OPEN_HEX,
                     help="payload da abertura de sessão de controle (hex); padrão = o da nuvem real")
@@ -305,32 +325,44 @@ def main():
         while True:
             conn, addr = srv.accept()
             print(f"== central conectou de {addr}")
-            r.sock = conn
-            threading.Thread(target=r.reader, daemon=True).start()
-            threading.Thread(target=r.poller, args=(ns.poll,), daemon=True).start()
-            threading.Thread(target=r.keepalive, args=(ns.keepalive,), daemon=True).start()
+            # reset de estado por conexão (a central reconecta sozinha no churn de WiFi):
+            # sem isso, buf/sessão/threads antigas vazam e dessincronizam.
+            with r.lock:
+                old = r.sock
+                r.sock = conn
+                r.buf = b""
+                r.session_opened = False
+                r._last_status_key = None
+                r._pending_cmd = None
+            if old:
+                try: old.close()
+                except OSError: pass
+            threading.Thread(target=r.reader, args=(conn,), daemon=True).start()
+            threading.Thread(target=r.poller, args=(conn, ns.poll), daemon=True).start()
     threading.Thread(target=accept_loop, daemon=True).start()
 
     for line in sys.stdin:
         cmd = line.strip().lower()
         if cmd == "quit": break
-        elif cmd in CMD_MAP:
-            r.send(r.SID, CMD_MAP[cmd])
+        elif cmd == "status":
+            r.send(r.SID, CMD_MAP["status"])           # leitura: não precisa reabrir sessão
+        elif cmd in CMD_MAP:                             # arme/desarme/choque: comando de controle
+            r.control(CMD_MAP[cmd])
         elif cmd == "panic" or cmd.startswith("panic "):
             # 40 1a <tipo>: 0=silencioso, 1=audivel, 2=fogo, 3=medico (cross-val. bobaoapae).
             # Confirmado em teste o tipo 1 (disparo audivel).
             pr = cmd.split()
             tipo = int(pr[1]) if len(pr) == 2 and pr[1] in ("0","1","2","3") else 1
             print(f"[!] PÂNICO tipo={tipo} ({'silencioso' if tipo==0 else 'audivel' if tipo==1 else 'fogo' if tipo==2 else 'medico'})")
-            r.send(r.SID, bytes.fromhex("401a") + bytes([tipo]))
+            r.control(bytes.fromhex("401a") + bytes([tipo]))
         elif cmd == "sirenoff":
             # 40 19 = desliga sirene sem desarmar (opcode do APK via bobaoapae; NÃO testado no ELC)
             print("[*] desligar sirene (40 19) — nao testado no ELC")
-            r.send(r.SID, bytes.fromhex("4019"))
+            r.control(bytes.fromhex("4019"))
         elif cmd.startswith("pgm "):   # pgm <1|2> <on|off> (ordem dos params a confirmar)
             pr = cmd.split()
             if len(pr) == 3 and pr[1] in ("1","2") and pr[2] in ("on","off"):
-                r.send(r.SID, bytes.fromhex("45af") + bytes([int(pr[1])-1, 1 if pr[2]=="on" else 0]))  # PGM base-0
+                r.control(bytes.fromhex("45af") + bytes([int(pr[1])-1, 1 if pr[2]=="on" else 0]))  # PGM base-0
             else:
                 print("uso: pgm <1|2> <on|off>")
         elif cmd == "events":
@@ -339,7 +371,7 @@ def main():
         elif cmd.startswith("bypass "):
             z = cmd.split()[1]  # 8 dígitos 0/1, ex.: bypass 00100000 (zona 3)
             if len(z) == 8 and set(z) <= {"0","1"}:
-                r.send(r.SID, bytes.fromhex("401fff") + bytes(int(c) for c in z))
+                r.control(bytes.fromhex("401fff") + bytes(int(c) for c in z))
             else:
                 print("uso: bypass <8 dígitos 0/1>, ex.: bypass 00100000")
         elif cmd.startswith("raw "):

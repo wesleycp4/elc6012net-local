@@ -44,7 +44,8 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Abertura de sessão de controle `f0 f0` | ✅ **validado ao vivo**: payload fixo `f0 f0 03 03 06 05 09 00 00 00 01` (sem código) |
 | Keepalive `f0 f1` proativo | ✅ **validado ao vivo**: relay pinga, sessão fica de pé (6+ min) |
 | Status ao vivo (sem nuvem) | ✅ **validado ao vivo**: choque/alarme/zonas/disparo/relógio/RSSI reais |
-| Comandos (arme/choque) via relay | 🟡 corrigido: sessão de leitura dava NACK no `40 1e`; agora usa a sessão de controle — falta re-testar efeito físico |
+| Comandos (arme/choque) via relay | 🟡 causa do NACK achada: o relay mandava `f0 f1` (=DISCONNECT) e derrubava a sessão de controle → `40 1e` caía em sessão fechada (NACK `0x21`). Removido o `f0 f1` + reabre a sessão antes de cada comando — **falta re-testar efeito físico** |
+| Reconexão (churn de WiFi) | ✅ reset de buf/sessão por conexão; threads atadas à conexão |
 | Bypass / PGM / pânico via relay | ⬜ implementado; falta validar ao vivo |
 | Integração MQTT → Home Assistant local | ⬜ planejado |
 | Interface web (painel no relay) | 🟡 implementada (`--web`); falta validar ao vivo |
