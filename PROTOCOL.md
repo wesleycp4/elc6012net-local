@@ -79,15 +79,23 @@ Ordem observada ao conectar (✅):
 2. **`f0 f7`** (central) → `f0 fe` (relay).
 3. **Hora** (central pede `f0 80 03`) → relay responde
    `f0 80 <AA MM DD DS hh mm ss>` em **BCD** (DS = dia da semana) (ex.: `26 11 13 06 08 18 04`). ✅
-4. **Abertura de sessão de app** (`f0 f0`) ✅ — antes de pedir status ou mandar
-   comando, o relay abre uma sessão de índice N enviando, na sessão `00 00 00 0N`:
-   `f0 f0 01 <dígitos do código> 10 00`; a central confirma com `f0 f0 00 <ck>` na
-   sessão `00 0N 00 00`. **Sem essa abertura, a central ignora poll e comando.**
+4. **Abertura de sessão de controle** (`f0 f0`) ✅ — antes de pedir status ou mandar
+   comando, o relay abre a sessão na sessão `00 00 00 0N` enviando o payload **fixo**
+   `f0 f0 03 03 06 05 09 00 00 00 01` (o `03 03 06 05 09` é constante em todas as
+   capturas; o tail varia entre `00 00 00 01` e `00 00 01 00`). A central confirma
+   com `f0 f0 00 <ck>` na sessão `00 0N 00 00`. **Sem essa abertura, a central
+   ignora poll e comando.**
 
-   ⚠️ **O código de acesso vai em texto claro**, um dígito por byte (ex.: um código
-   de 6 dígitos ocupa 6 bytes entre o prefixo `01` e o sufixo `10 00`). Por isso o
-   código fica exposto na captura; o relay recebe o código em tempo de execução
-   (`--code`), nunca embutido.
+   🔑 **Esta sessão NÃO leva o código de acesso** — ele não aparece em texto claro
+   em nenhum frame do tráfego de controle. A central **não autentica o servidor**:
+   qualquer um que alcance a central e envie esse handshake fixo tem controle total
+   (é o que torna o controle local possível, e também a falha de segurança do
+   produto). O código de acesso fica exposto, sim, mas no **bloco de config `04 00`
+   (usuários)**, não aqui.
+
+   ⚠️ Existe também a variante `f0 f0 01 <dígitos> 10 00`, que abre uma sessão de
+   **só leitura**: a central responde status mas dá **NACK (`f0 fd`) em `40 1e`** e
+   outros comandos. Use sempre a sessão de controle acima para arme/desarme/choque.
 5. **Keepalive de sessão** ✅ — **quem pinga é o servidor** (nuvem/relay). Durante
    a sessão ele envia `f0 f1` (na sessão de app `00 00 00 0N`) e a central responde
    `f0 fd` ou `f0 fe` ~0,1–0,8 s depois. Na conexão base (`00 00 00 00`) o servidor

@@ -41,10 +41,10 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 |---|---|
 | Enquadramento (leitura/escrita de frames) | ✅ **validado ao vivo**; resync por cabeçalho (lida com variante f0fd/f0fe +1 byte) |
 | Registro + hora | ✅ **validado ao vivo** (central registra, pede hora, recebe) |
-| Abertura de sessão `f0 f0` | ✅ **validado ao vivo**: `f0 f0 01 <código> 10 00`; relay via `--code` |
+| Abertura de sessão de controle `f0 f0` | ✅ **validado ao vivo**: payload fixo `f0 f0 03 03 06 05 09 00 00 00 01` (sem código) |
 | Keepalive `f0 f1` proativo | ✅ **validado ao vivo**: relay pinga, sessão fica de pé (6+ min) |
 | Status ao vivo (sem nuvem) | ✅ **validado ao vivo**: choque/alarme/zonas/disparo/relógio/RSSI reais |
-| Comandos (arme/choque) via relay | 🟡 enviados ao vivo (`40 1e`); falta confirmar efeito físico |
+| Comandos (arme/choque) via relay | 🟡 corrigido: sessão de leitura dava NACK no `40 1e`; agora usa a sessão de controle — falta re-testar efeito físico |
 | Bypass / PGM / pânico via relay | ⬜ implementado; falta validar ao vivo |
 | Integração MQTT → Home Assistant local | ⬜ planejado |
 | Interface web (painel no relay) | 🟡 implementada (`--web`); falta validar ao vivo |

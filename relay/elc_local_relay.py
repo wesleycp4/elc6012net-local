@@ -55,6 +55,14 @@ def decode_status(p: bytes):
     rel    = f"{p[72]:02d}/{p[73]:02d}/{p[74]:02d} {p[75]:02d}:{p[76]:02d}:{p[77]:02d}"
     return f"choque={choque} alarme={alarme} zonas={zonas} disparo={disp} sinal=-{sig}dBm relogio={rel}"
 
+# Abertura de sessão de CONTROLE. Bytes fixos observados na nuvem real em TODAS as
+# capturas de arme/desarme/choque (o `03 03 06 05 09` é constante). NÃO leva o
+# código de acesso — a central não autentica o servidor, então o código nem
+# aparece no tráfego. Esta sessão autoriza status E comandos. (A variante
+# `f0 f0 01 <código> 10 00` abre só leitura: a central aceita status mas dá NACK
+# em 40 1e — foi o que travou o 1º teste de comando.)
+SESSION_OPEN_HEX = "f0f0030306050900000001"
+
 # comandos que a CENTRAL envia para o relay (usados para re-sincronizar frames)
 RX_CMDS = {b"\x0b\x4a", b"\xf0\xfd", b"\xf0\xfe", b"\xf0\xf0", b"\xf0\xf7",
            b"\xf0\xf1", b"\xf0\x80", b"\x3f\x94", b"\x39\x00", b"\x10\xb2",
@@ -83,7 +91,8 @@ class Relay:
         self.buf = b""
         self.last_status = {}
         self._last_status_key = None
-        self.code = b""          # dígitos do código de acesso (bytes 0-9)
+        self.code = b""          # (não usado para a sessão de controle; ver open_session)
+        self.session_open = bytes.fromhex(SESSION_OPEN_HEX)
         self.session_opened = False
         self.SID = b"\x00\x00\x00\x01"  # índice de sessão deste relay
 
@@ -181,14 +190,11 @@ class Relay:
             print(f"[HIST] {ts}  codigo={r[0:9].hex()}")
 
     def open_session(self):
-        """Abre a sessão de app enviando f0 f0 01 <código> 10 00 (§3.4).
-        Sem --code o relay não abre sessão: a central ignora poll/comando."""
-        if not self.code:
-            print("[SESSAO] sem --code; a central provavelmente ignorará status/comandos")
-            return
-        payload = bytes([0xf0, 0xf0, 0x01]) + self.code + bytes([0x10, 0x00])
-        print("[SESSAO] abrindo sessão de app...")
-        self.send(self.SID, payload)
+        """Abre a sessão de CONTROLE (f0 f0 03 03 06 05 09 00 00 00 01, fixa).
+        Autoriza status E comandos. Não leva o código: a central não autentica
+        o servidor (o código não aparece no tráfego)."""
+        print("[SESSAO] abrindo sessão de controle...")
+        self.send(self.SID, self.session_open)
 
     def poller(self, interval):
         while True:
@@ -276,12 +282,15 @@ def main():
     ap.add_argument("--poll", type=int, default=15)
     ap.add_argument("--keepalive", type=int, default=10, help="intervalo do ping f0f1 de sessão (s)")
     ap.add_argument("--web", type=int, default=0, help="porta do painel web (0 = desligado)")
-    ap.add_argument("--code", default="", help="código de acesso (dígitos) p/ abrir a sessão")
+    ap.add_argument("--session-hex", default=SESSION_OPEN_HEX,
+                    help="payload da abertura de sessão de controle (hex); padrão = o da nuvem real")
+    ap.add_argument("--code", default="", help="(ignorado) a central não autentica o servidor; mantido p/ compatibilidade")
     ns = ap.parse_args()
     host, port = ns.listen.rsplit(":", 1)
     r = Relay()
+    r.session_open = bytes.fromhex(ns.session_hex.replace(" ", ""))
     if ns.code:
-        r.code = bytes(int(d) for d in ns.code if d.isdigit())
+        print("[i] --code é ignorado: a sessão de controle não usa o código (a central não autentica o servidor).")
     if ns.web:
         start_web(r, ns.web)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
