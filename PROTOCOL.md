@@ -173,7 +173,7 @@ Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
 Contact-ID, com dois timestamps. Relay responde `f0 fe`. É o que gera as
 notificações. Decodificação detalhada de cada código: 🟡 (parcial).
 
-### 4.9 Recusa de comando — `f0 fd <código>`  ✅
+### 4.8 Recusa de comando — `f0 fd <código>`  ✅
 Quando a central **recusa** um comando (`40 1e`, `40 1f`, `45 af`, `40 1a`) ela
 responde `f0 fd <código>` ~0,1 s depois, em vez de executar (o status não muda).
 Códigos observados:
@@ -190,7 +190,7 @@ Um `f0 fd` de **keepalive** é diferente: o byte final é o checksum válido (xc
 um código de recusa. O relay distingue os dois e loga `[RECUSADO] code 0xNN` só na
 recusa real.
 
-### 4.8 Desligar sirene — comando `40 19`  ⬜
+### 4.9 Desligar sirene — comando `40 19`  ⬜
 Relay→central: `40 19` silencia a sirene sem desarmar. Byte do comando conhecido
 pela eng. reversa do APK (`bobaoapae`, ver §7); **não testado no ELC** — falta
 confirmar payload/efeito em captura.
@@ -235,6 +235,42 @@ memória, mesmo enquadramento.
 | `[11]` | modo PGM2: cerca=`00`, acesso app=`01`, espelho sirene=`02` |
 | `[14]` | reportagem em tempo real (`01`/`00`) |
 | `[8]`,`[12]` | PGM temporizada (segundos) — 🟡 a confirmar |
+
+### Gravar config (inclui **trocar a rede Wi-Fi**)  🟡
+Todo ajuste de config é um `2f 12 <addr> <tam> <dados>`. Observados em captura
+(estrutura confirmada; efeito ao vivo pelo relay ainda não testado):
+
+| Operação | Escrita |
+|---|---|
+| **Trocar a rede Wi-Fi** | `2f 12 02 c0 00 60 <96 bytes: SSID + senha em texto claro>` — depois a central reconecta na rede nova |
+| Renomear zona / mudar atributo | `2f 12 00 00 00 80 <128 bytes: 8×[attr][nome 15]>` |
+| Nome do eletrificador | `2f 12 02 b0 00 10 <16 bytes>` |
+| Pulsos falhos / modo PGM / reportagem | `2f 12 03 e0 00 20 <32 bytes, offsets acima>` |
+| Usuários (nomes/código) | `2f 12 04 00 01 a4 <420 bytes>` ⚠️ contém o código em claro |
+
+> ⚠️ As gravações de `02 c0` (Wi-Fi) e `04 00` (usuários) levam **senha/código em
+> texto claro**. O `decode_capture.py` mascara esses blocos; não publique o pcap cru.
+
+---
+
+## 6. Outros opcodes observados (a confirmar)  🟡
+
+Opcodes que aparecem no tráfego servidor→central (app pela nuvem) mas que **não são
+necessários** para o controle local e ainda **não foram mapeados a fundo**. Ficam
+aqui para completar o mapa. Todos na sessão de app (`00 00 00 0N`).
+
+| Opcode | Bytes (ex.) | Resposta observada | Provável |
+|---|---|---|---|
+| `3f aa` | `3f aa 00` | — | **Pedir MAC** da central (bobaoapae: `GET_MAC`, ver §7) |
+| `38 5b` | `38 5b` | `38 5b 00` (ack curto) | consulta de status/flag (aparece em rajada de polling) |
+| `38 5c` | `38 5c 00` | status `0b 4a` / eventos | consulta que dispara atualização de status |
+| `0b 01` | `0b 01` | status `0b 4a` / eventos | variante curta de consulta de status |
+| `00 60` | `00 60` | — | consulta curta (sem resposta clara) |
+| `46 a0` | `46 a0 ff <N>` | status `0b 4a` | comando por partição (`ff`), `N`=02/03/04/06 variando |
+| `46 10` | `46 10 ff` | status `0b 4a` | comando por partição (`ff`) |
+
+Significado exato a confirmar com testes dirigidos (acionar a função no app anotando
+a hora e casar com o opcode).
 
 ---
 

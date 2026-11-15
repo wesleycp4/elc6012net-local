@@ -26,6 +26,16 @@ import re
 def mask_digits(s):
     """Esconde sequências longas de dígitos (códigos/PINs) de qualquer preview."""
     return re.sub(r"\d{4,}", lambda m: "#" * len(m.group()), s)
+# opcodes extras observados (ver PROTOCOL.md §6) — só rotula, não decodifica a fundo
+OPCODES = {
+    "3faa": "pedir MAC (GET_MAC)", "385b": "consulta 38 5b", "385c": "consulta 38 5c",
+    "0b01": "consulta status curta 0b 01", "0060": "consulta 00 60",
+    "46a0": "comando por particao 46 a0", "4610": "comando por particao 46 10",
+    "4019": "desligar sirene (40 19)", "3900": "historico de eventos (39 00)",
+    "3f94": "REGISTRO da central", "f080": "sincronismo de hora",
+    # keepalive/ack (f0fe/f0fd/f0f7/f0f1) ficam de fora de propósito: são muito
+    # frequentes e floodariam a saída.
+}
 ZONE_ATTR = [(0x01,"habilitada"),(0x02,"inteligente"),(0x04,"temporizada"),
              (0x10,"silenciosa"),(0x20,"parcial"),(0x40,"24h")]
 
@@ -89,6 +99,10 @@ def decode(path, port):
         elif cmd == "401a" and len(pl) >= 9:
             PANIC = {0:"silencioso",1:"audivel",2:"fogo",3:"medico"}
             note = f"PANICO (40 1a {pl[8]:02x} = {PANIC.get(pl[8],'tipo?')})"
+        elif cmd in OPCODES:
+            note = OPCODES[cmd]
+            if cmd in ("46a0", "4610") and len(pl) >= 9:
+                note += f"  dados={body.hex(' ')}"
         elif cmd in ("3f12", "2f12") and len(body) >= 4:
             addr = body[0:2].hex(); ln = (body[2]<<8)|body[3]; data = body[4:4+ln]
             bname, sens = BLOCKS.get(addr, (f"addr {addr}", False))

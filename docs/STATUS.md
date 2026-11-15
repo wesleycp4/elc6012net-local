@@ -33,7 +33,10 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | `03 e0` pulsos falhos, PGM1/PGM2 modo, reportagem | ✅ | |
 | `03 e0` PGM temporizada (segundos) | 🟡 | offset a confirmar |
 | `02 c0` Wi-Fi (SSID+senha) | ✅ | texto claro |
-| `04 00` usuários (nomes) | ✅ | PINs não localizados em claro |
+| **Trocar a rede Wi-Fi** (`2f 12 02 c0`) | 🟡 | gravação mapeada (SSID+senha); efeito via relay a testar |
+| `04 00` usuários (nomes/código) | ✅ | código em texto claro no bloco |
+| Opcodes extras (`38 5b`/`38 5c`/`0b 01`/`46 a0`/`46 10`/`00 60`) | 🟡 | observados (PROTOCOL §6); significado a confirmar |
+| `3f aa` pedir MAC | ✅ | cross-val. bobaoapae (`GET_MAC`) |
 | Parear sensor sem fio | ⬜ | **teste aberto** (precisa central desarmada) |
 
 ## Relay local
