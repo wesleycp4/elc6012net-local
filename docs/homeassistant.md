@@ -34,7 +34,8 @@ e instale um dos dois (só um por vez, ambos usam a porta 9009):
   comandos locais (código da `experimental`, não testado ao vivo).
 
 As credenciais do Mosquitto vêm sozinhas. Cada App tem a aba *Documentação* com o
-redirecionamento de DNS necessário (`amt8000.intelbras.com.br → IP do HA`).
+redirecionamento de DNS necessário (`amt8000.intelbras.com.br → IP do HA`) —
+obrigatório nos dois Apps; ver [redirecionamento.md](redirecionamento.md).
 
 **Passo a passo manual (fora do HA OS):**
 1. Tenha um broker MQTT na rede — no HA OS, instale o add-on **Mosquitto broker** e

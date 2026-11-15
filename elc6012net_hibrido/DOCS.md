@@ -17,7 +17,10 @@ Neste modo o App fica **no meio** entre a central e a nuvem Intelbras:
 
 1. **App Mosquitto** rodando.
 2. **Redirecione a central para o HA**, igual ao App Local: no DNS da rede,
-   `amt8000.intelbras.com.br → IP do HA`; depois religue a central.
+   `amt8000.intelbras.com.br → IP do HA`; depois religue a central. O Híbrido
+   **também exige** esse redirecionamento (ele só mantém a nuvem ligada *depois*
+   que a central conecta). Como fazer:
+   https://github.com/wesleycp4/elc6012net-local/blob/main/docs/redirecionamento.md
 3. A opção `upstream` usa o **IP** da nuvem (padrão `52.67.212.35:9009`), para não
    cair no próprio redirecionamento de DNS. Se a Intelbras mudar o IP, atualize.
 4. **Só um App por vez** na porta 9009 — pare o App Local antes.

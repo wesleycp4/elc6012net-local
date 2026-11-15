@@ -12,7 +12,8 @@ Com a central numa rede onde o seu Linux é o gateway (ver
 # 1) sobe o relay com o painel web
 python3 elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --web 8080
 
-# 2) redireciona o servidor da nuvem para o relay — por DNS ou DNAT:
+# 2) redireciona o servidor da nuvem para o relay — por DNS ou DNAT
+#    (na rede de casa: ver ../docs/redirecionamento.md):
 
 #  a) DNS (dnsmasq): resolve o host da nuvem para o IP do relay
 echo 'address=/amt8000.intelbras.com.br/10.0.0.1' | sudo tee -a /tmp/dnsmasq.conf

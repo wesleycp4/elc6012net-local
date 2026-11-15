@@ -18,7 +18,9 @@ https://github.com/wesleycp4/elc6012net-local
    `amt8000.intelbras.com.br` na porta 9009. Faça esse nome apontar para o IP do
    seu Home Assistant no DNS da sua rede (roteador, AdGuard, Pi-hole…), por
    exemplo: `amt8000.intelbras.com.br → 192.168.31.10`. Depois desligue e religue a
-   central para ela reconectar.
+   central para ela reconectar. **Sem isso o App não funciona** — opções (roteador,
+   AdGuard, rede só para a central, DNAT), teste e limitações:
+   https://github.com/wesleycp4/elc6012net-local/blob/main/docs/redirecionamento.md
 3. **Pare o App de nuvem "ELC 6012 NET"**: com a central falando com este App, a
    nuvem não a enxerga mais.
 4. **Só um App por vez** na porta 9009 — não rode junto com o "Híbrido".

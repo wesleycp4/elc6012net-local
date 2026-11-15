@@ -23,6 +23,11 @@ rhacius); **todo o controle passa pelo relay**. Dois servidores (porta 9009):
 1. `amt.intelbras.com.br` — servidor "geral" (informa em qual relay o painel está)
 2. `amt8000.intelbras.com.br` — relay onde a sessão acontece (ex.: `52.67.212.35`)
 
+O nome `amt8000.intelbras.com.br` é **fixo no firmware**: nas capturas ele só
+aparece nas consultas DNS da central, nunca no protocolo nem nos blocos de config —
+não há comando conhecido para trocá-lo. Para usar um relay local é preciso
+redirecioná-lo na rede (ver [docs/redirecionamento.md](docs/redirecionamento.md)).
+
 **Nenhuma autenticação do servidor.** ✅ (a *sessão de app* tem sua própria abertura, §3.4) A central se registra mandando só o MAC +
 modelo; o relay responde `f0 fe` (ok) e segue. Não há TLS, nem token, nem desafio
 que a central valide. **Consequência: se a central conectar no seu servidor, ele é
@@ -211,7 +216,7 @@ memória, mesmo enquadramento.
 |---|---|---|
 | `00 00` | 128 | **Zonas**: 8 × 16 bytes = `[attr][nome 15 chars]` |
 | `02 b0` | 16 | **Nome do eletrificador** |
-| `02 c0` | 96 | **Config Wi-Fi** (SSID + senha, **texto claro** ⚠️) |
+| `02 c0` | 96 | **Config Wi-Fi**: SSID (32 B) + senha (64 B), padding `ff`, **texto claro** ⚠️; sem IP/DNS (sempre DHCP) |
 | `03 e0` | 32 | **Config geral** (abaixo) |
 | `04 00` | 420 | **Usuários** (nomes) |
 
