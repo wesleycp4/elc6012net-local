@@ -80,6 +80,22 @@ def valid_header(b: bytes) -> bool:
     return (len(b) >= 8 and b[0] == 0 and b[2] == 0 and b[3] == 0
             and b[1] <= 0x0f and b[6:8] in RX_CMDS)
 
+def split_frames(buf: bytes):
+    """Separa os frames completos de `buf` (framing da central), re-sincronizando
+    pelo cabeçalho. Retorna (lista de (cmd, frame), resto). Usado pelo reader
+    (modo substituir) e pelo tap (modo proxy)."""
+    out = []
+    while len(buf) >= 8:
+        if not valid_header(buf):
+            buf = buf[1:]; continue                # ressync: pula byte de lixo
+        L = (buf[4] << 8) | buf[5]
+        cmd = buf[6:8]
+        total = L if (cmd == b"\x0b\x4a" and L == 0xa4) else 7 + L
+        if len(buf) < total:
+            break
+        out.append((cmd, buf[:total])); buf = buf[total:]
+    return out, buf
+
 CMD_MAP = {
     "arm":      bytes.fromhex("401e0101"),   # alarme on  (part 1)
     "disarm":   bytes.fromhex("401e0100"),   # alarme off
@@ -104,6 +120,15 @@ class Relay:
         self._pending_cmd = None        # (opcode, ts, retry) do comando, p/ detectar NACK
         self._last_control = None       # último payload de controle, p/ reenviar numa recusa
         self.mqtt = None                # ponte MQTT→Home Assistant (opcional, --mqtt)
+        # modo PROXY/híbrido (experimental, --upstream): repassa p/ a nuvem real e
+        # injeta comandos numa sessão própria (índice 2) p/ não brigar com a sessão
+        # da nuvem (índice 1).
+        self._ctrl_lock = threading.Lock()   # serializa control() (stdin/web/MQTT/retry)
+        self.proxy = False
+        self.upstream = None            # (host, porta) da nuvem real
+        self.up = None                  # socket upstream (p/ a nuvem)
+        self.inject_sid = b"\x00\x00\x00\x02"
+        self.tap_buf = b""
 
     def send(self, session: bytes, payload: bytes, quiet: bool = False):
         if not self.sock:
@@ -128,37 +153,61 @@ class Relay:
         extra), descartamos 1 byte e realinhamos no próximo frame. Isso se
         autocorrige: um f0fd/f0fe fica no máx. 1 byte torto (é só ack, não
         importa) e status/eventos/comandos voltam a cair certo."""
-        while len(self.buf) >= 8:
-            if not valid_header(self.buf):
-                self.buf = self.buf[1:]            # ressync: pula byte de lixo
-                continue
-            L = (self.buf[4] << 8) | self.buf[5]   # tamanho = 2 bytes big-endian
-            cmd = self.buf[6:8]
-            if cmd == b"\x0b\x4a" and L == 0xa4:
-                total = L                 # status 164B: campo = total, SEM checksum
-            else:
-                total = 7 + L
-            if len(self.buf) < total:
-                break
-            frame, self.buf = self.buf[:total], self.buf[total:]
+        out, self.buf = split_frames(self.buf)
+        for cmd, frame in out:
             yield cmd, frame
+
+    def _update_status(self, frame: bytes):
+        """Atualiza/estado + imprime na mudança + publica no MQTT. Sem envios."""
+        key = frame[30:32] + frame[46:48] + frame[54:56] + frame[62:64] if len(frame) >= 164 else frame
+        if key != self._last_status_key:
+            print(f"[STATUS] {decode_status(frame)}")
+            self._last_status_key = key
+        if len(frame) >= 164:
+            self.last_status = {
+                "choque": bool(frame[30] & 1), "alarme": bool(frame[31] & 1),
+                "zonas": frame[46:48].hex(), "disparo": frame[54:56].hex(),
+                "bypass": frame[62:64].hex(),
+                "ts": datetime.now().strftime("%H:%M:%S")}
+            if self.mqtt:
+                self.mqtt.publish_state(self.last_status)
+
+    def _on_f0fd(self, frame: bytes):
+        """Detecta recusa de comando (NACK) e reenvia. Sem envios diretos aqui
+        além do retry (que chama control())."""
+        if not (self._pending_cmd and time.time() - self._pending_cmd[1] < 1.5):
+            return
+        code = frame[8] if len(frame) >= 9 else None
+        # num keepalive o byte após f0fd é o checksum (xck); num NACK é um código
+        # de recusa que NÃO bate com o xck (ex.: 0x21, 0x3f, 0x00).
+        if code is None or code == xck(frame[:8]):
+            self._pending_cmd = None; return
+        op, _ts, retry = self._pending_cmd
+        self._pending_cmd = None
+        if retry < 2 and self._last_control is not None:
+            print(f"[RECUSADO] {op} code 0x{code:02x} — reabrindo e reenviando ({retry+1}/2)...")
+            pl = self._last_control
+            threading.Thread(target=lambda: self.control(pl, retry + 1), daemon=True).start()
+        else:
+            print(f"[RECUSADO] {op} code 0x{code:02x} — falhou após retentativas. "
+                  f"Se 0x21 persistir, pode ser permissão/modo de controle via app na central.")
+
+    def tap(self, frame: bytes, cmd: bytes):
+        """Modo PROXY: só OBSERVA os frames (não envia nada — quem fala o protocolo
+        com a central é a nuvem). Atualiza status/HA, loga eventos, detecta NACK dos
+        NOSSOS comandos injetados."""
+        c = cmd.hex()
+        if c == "0b4a":
+            self._update_status(frame)
+        elif c == "10b2":
+            print(f"[EVENTO] {frame[8:].hex(' ')}")
+        elif c == "f0fd":
+            self._on_f0fd(frame)
 
     def handle(self, frame: bytes, cmd: bytes):
         c = cmd.hex()
         if c == "0b4a":                      # resposta de status
-            # imprime só quando o ESTADO muda (ignora relógio/RSSI, que mudam sempre)
-            key = frame[30:32] + frame[46:48] + frame[54:56] + frame[62:64] if len(frame) >= 164 else frame
-            if key != self._last_status_key:
-                print(f"[STATUS] {decode_status(frame)}")
-                self._last_status_key = key
-            if len(frame) >= 164:
-                self.last_status = {
-                    "choque": bool(frame[30] & 1), "alarme": bool(frame[31] & 1),
-                    "zonas": frame[46:48].hex(), "disparo": frame[54:56].hex(),
-                    "bypass": frame[62:64].hex(),
-                    "ts": datetime.now().strftime("%H:%M:%S")}
-                if self.mqtt:
-                    self.mqtt.publish_state(self.last_status)
+            self._update_status(frame)
         elif c == "10b2":                    # central reportando evento
             print(f"[EVENTO] {frame[8:].hex(' ')}")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
@@ -166,26 +215,8 @@ class Relay:
             mac = frame[11:17].hex(":")
             print(f"[REGISTRO] central MAC={mac} modelo={frame[17]:02x} -> ack")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
-        elif c in ("f0fd", "f0fe"):          # f0fe=ACK, f0fd=NACK/keepalive-resp
-            # Se acabamos de mandar um comando e veio f0fd logo em seguida, é RECUSA.
-            # O byte após f0fd é o código: 0x21 = função não habilitada p/ app/remoto
-            # (mesmo código que a PGM dá fora do modo "acesso via app"); 0x3f visto no bypass.
-            if c == "f0fd" and self._pending_cmd and time.time() - self._pending_cmd[1] < 1.5:
-                code = frame[8] if len(frame) >= 9 else None
-                # num keepalive o byte após f0fd é o checksum (xck); num NACK é um
-                # código de recusa que NÃO bate com o xck (ex.: 0x21, 0x3f, 0x00).
-                if code is not None and code != xck(frame[:8]):
-                    op, _ts, retry = self._pending_cmd
-                    self._pending_cmd = None
-                    if retry < 2 and self._last_control is not None:
-                        print(f"[RECUSADO] {op} code 0x{code:02x} — reabrindo e reenviando ({retry+1}/2)...")
-                        pl = self._last_control
-                        threading.Thread(target=lambda: self.control(pl, retry + 1), daemon=True).start()
-                    else:
-                        print(f"[RECUSADO] {op} code 0x{code:02x} — falhou após retentativas. "
-                              f"Se 0x21 persistir, pode ser permissão/modo de controle via app na central.")
-                else:
-                    self._pending_cmd = None
+        elif c == "f0fd":                    # NACK de comando ou resposta de keepalive
+            self._on_f0fd(frame)
         elif c == "3900":                    # resposta de histórico de eventos
             self._hist(frame[8:])
         elif c == "f0f7":
@@ -248,12 +279,56 @@ class Relay:
         handle() chama isto de novo (até 2x) reabrindo e reenviando."""
         if not self.sock:
             print("[!] central não conectada ainda"); return
-        if _retry == 0:
-            self._last_control = payload
-        self.send(self.SID, self.session_open, quiet=True)   # reabre a sessão de controle
-        time.sleep(0.15)                                      # deixa a central processar a reabertura
-        self._pending_cmd = (payload[:2].hex(), time.time(), _retry)
-        self.send(self.SID, payload)                          # manda o comando
+        with self._ctrl_lock:                            # serializa toda a sequência
+            if _retry == 0:
+                self._last_control = payload
+            # No modo proxy injetamos numa sessão própria (índice 2) p/ não brigar com
+            # a sessão da nuvem (índice 1); no modo substituir usamos a nossa (1).
+            sid = self.inject_sid if self.proxy else self.SID
+            self.send(sid, self.session_open, quiet=True)   # (re)abre a sessão de controle
+            time.sleep(0.15)                                 # deixa a central processar
+            self._pending_cmd = (payload[:2].hex(), time.time(), _retry)
+            self.send(sid, payload)                          # manda o comando
+
+    # ----- modo PROXY/híbrido (experimental) -----
+    def proxy_c2u(self, conn, up):
+        """central -> nuvem: encaminha CRU e TAPeia (status/eventos/NACK) p/ o HA."""
+        while self.sock is conn:
+            try:
+                data = conn.recv(4096)
+            except OSError:
+                break
+            if not data:
+                print("[proxy] central caiu")
+                if self.mqtt: self.mqtt.set_available(False)
+                break
+            if self.sock is not conn:
+                break
+            if up:
+                try:
+                    up.sendall(data)             # repassa p/ a nuvem (app segue vivo)
+                except OSError:
+                    print("[proxy] upstream (nuvem) caiu — controle local segue")
+                    up = None
+            self.tap_buf += data
+            frames, self.tap_buf = split_frames(self.tap_buf)
+            for cmd, frame in frames:
+                self.tap(frame, cmd)
+
+    def proxy_u2c(self, conn, up):
+        """nuvem -> central: encaminha CRU."""
+        while self.sock is conn:
+            try:
+                data = up.recv(4096)
+            except OSError:
+                break
+            if not data:
+                print("[proxy] nuvem encerrou a conexão")
+                break
+            try:
+                conn.sendall(data)
+            except OSError:
+                break
 
 
 PANEL_HTML = """<!doctype html><html lang=pt-br><head><meta charset=utf-8>
@@ -330,10 +405,19 @@ def main():
     ap.add_argument("--mqtt-user", default=None)
     ap.add_argument("--mqtt-pass", default=None)
     ap.add_argument("--mqtt-node", default="elc6012net", help="id do dispositivo no HA")
+    ap.add_argument("--upstream", default="", help="[EXPERIMENTAL] modo proxy/híbrido: "
+                    "IP da nuvem real (host[:porta]) — repassa tudo p/ a Intelbras (app segue "
+                    "funcionando) e injeta comandos locais. Não testado; pode dar conflito.")
     ns = ap.parse_args()
     host, port = ns.listen.rsplit(":", 1)
     r = Relay()
     r.session_open = bytes.fromhex(ns.session_hex.replace(" ", ""))
+    if ns.upstream:
+        uh, _, up_ = ns.upstream.partition(":")
+        r.proxy = True
+        r.upstream = (uh, int(up_ or 9009))
+        print(f"[proxy] modo híbrido (EXPERIMENTAL): repassando p/ a nuvem {r.upstream[0]}:{r.upstream[1]}")
+        print("[proxy] a central fala com a nuvem (app/avisos seguem) e o relay injeta comandos locais.")
     if ns.code:
         print("[i] --code é ignorado: a sessão de controle não usa o código (a central não autentica o servidor).")
     if ns.mqtt:
@@ -360,18 +444,33 @@ def main():
             # reset de estado por conexão (a central reconecta sozinha no churn de WiFi):
             # sem isso, buf/sessão/threads antigas vazam e dessincronizam.
             with r.lock:
-                old = r.sock
+                old, oldup = r.sock, r.up
                 r.sock = conn
-                r.buf = b""
+                r.buf = b""; r.tap_buf = b""
                 r.session_opened = False
                 r._last_status_key = None
                 r._pending_cmd = None
-            if old:
-                try: old.close()
-                except OSError: pass
+                r.up = None
+            for s in (old, oldup):
+                if s:
+                    try: s.close()
+                    except OSError: pass
             if r.mqtt: r.mqtt.set_available(True)
-            threading.Thread(target=r.reader, args=(conn,), daemon=True).start()
-            threading.Thread(target=r.poller, args=(conn, ns.poll), daemon=True).start()
+            if r.proxy:
+                # abre a conexão com a nuvem real e vira um túnel central<->nuvem,
+                # tapeando o tráfego e injetando comandos localmente.
+                try:
+                    up = socket.create_connection(r.upstream, timeout=10)
+                except OSError as e:
+                    print(f"[proxy] não conectou na nuvem {r.upstream}: {e} — seguindo só local")
+                    up = None
+                r.up = up
+                threading.Thread(target=r.proxy_c2u, args=(conn, up), daemon=True).start()
+                if up:
+                    threading.Thread(target=r.proxy_u2c, args=(conn, up), daemon=True).start()
+            else:
+                threading.Thread(target=r.reader, args=(conn,), daemon=True).start()
+                threading.Thread(target=r.poller, args=(conn, ns.poll), daemon=True).start()
     threading.Thread(target=accept_loop, daemon=True).start()
 
     for line in sys.stdin:
