@@ -2,23 +2,28 @@
 """
 elc_local_relay.py — relay LOCAL para o Intelbras ELC 6012 NET.
 
-PROTÓTIPO de bancada. Emula o papel da nuvem Intelbras: a central conecta
-AQUI (em vez de amt8000.intelbras.com.br) e passa a ser controlada 100%
-localmente, sem nuvem e sem app. Baseado em captura do protocolo real
-(central <-> relay, TCP 9009, texto claro, sem autenticação do servidor).
+Emula o papel da nuvem Intelbras: a central conecta AQUI (em vez de
+amt8000.intelbras.com.br) e passa a ser controlada 100% localmente, sem nuvem e
+sem app. Controle (arme/desarme/choque/tudo) confirmado ao vivo. Baseado em
+captura do protocolo real (central <-> relay, TCP 9009, texto claro, sem
+autenticação do servidor).
 
-Como pôr a central para conectar aqui (no notebook-gateway da central):
-    # redireciona o destino da nuvem para este relay local:
-    sudo nft add rule ip nat prerouting iifname "wlp0s20f3" \
-        ip daddr 52.67.212.35 tcp dport 9009 dnat to 10.0.0.1:9009
-    # (e, se a central também usar o servidor "geral", redirecione o IP dele igual)
-    python3 elc_local_relay.py --listen 0.0.0.0:9009
+Como pôr a central para conectar aqui (no notebook-gateway da central) —
+redirecione o servidor da nuvem para este relay, por DNS ou DNAT:
+    # DNS (dnsmasq): resolve o host da nuvem para o IP do relay
+    address=/amt8000.intelbras.com.br/10.0.0.1
+    # ou DNAT (nftables): reescreve o destino da nuvem para o relay
+    sudo nft add rule ip nat prerouting ip daddr <IP-da-nuvem> tcp dport 9009 \
+        dnat to 10.0.0.1:9009
+    python3 elc_local_relay.py --listen 0.0.0.0:9009 --web 8080
 
-Comandos no terminal (stdin): arm | disarm | shockon | shockoff | allon |
-    alloff | status | raw <hex> | quit
+Controle: painel web em http://127.0.0.1:8080 (via principal), ou stdin:
+    arm | disarm | shockon | shockoff | allon | alloff | status |
+    panic [0-3] | sirenoff | pgm <1|2> <on|off> | bypass <8 dígitos> |
+    events | raw <hex> | quit
 
-NÃO É PRODUÇÃO: enquanto isto roda, a central não fala com a Intelbras
-(sem notificações pela nuvem deles). Teste com a cerca ciente disso.
+Enquanto isto roda, a central não fala com a Intelbras (sem as notificações da
+nuvem deles). Aciona uma CERCA ELÉTRICA real — teste ciente disso.
 """
 import argparse, json, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, HTTPServer

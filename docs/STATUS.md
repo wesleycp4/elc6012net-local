@@ -4,8 +4,8 @@ Estado da engenharia reversa. **Contribuições são bem-vindas** — se você t
 ELC 6012 NET, pode rodar os testes abertos e mandar a captura (veja
 [CONTRIBUTING](../CONTRIBUTING.md)).
 
-> Trabalho ainda não validado ao vivo (painel web, modo HA local) fica na branch
-> **`experimental`**; ao validar, entra na `main`.
+> As branches `main` e `experimental` estão sincronizadas. Trabalho em curso
+> (ex.: integração HA local) pode ficar na `experimental` antes de validar.
 
 Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 
