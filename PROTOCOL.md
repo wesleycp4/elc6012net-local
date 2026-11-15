@@ -268,6 +268,7 @@ aqui para completar o mapa. Todos na sessão de app (`00 00 00 0N`).
 | `00 60` | `00 60` | — | consulta curta (sem resposta clara) |
 | `46 a0` | `46 a0 ff <N>` | status `0b 4a` | comando por partição (`ff`), `N`=02/03/04/06 variando |
 | `46 10` | `46 10 ff` | status `0b 4a` | comando por partição (`ff`) |
+| `0b 1a` | `0b 1a <hh mm ss> <evento…>` (registros ~15B) | — | **Buffer de eventos recentes** empurrado na sessão de app (timestamp + evento Contact-ID, primo do `10 b2`/`39 00`). Só no fluxo da nuvem; não usado no controle local |
 
 Significado exato a confirmar com testes dirigidos (acionar a função no app anotando
 a hora e casar com o opcode).

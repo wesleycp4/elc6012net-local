@@ -53,7 +53,12 @@ class MqttBridge:
         except ImportError:
             print("[mqtt] paho-mqtt não instalado. Rode: pip install paho-mqtt")
             return False
-        self.cli = mqtt.Client(client_id=f"elc6012-relay-{self.node}")
+        # paho 2.0+ exige CallbackAPIVersion como 1o argumento; 1.x não tem.
+        try:
+            self.cli = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1,
+                                   client_id=f"elc6012-relay-{self.node}")
+        except (AttributeError, TypeError):
+            self.cli = mqtt.Client(client_id=f"elc6012-relay-{self.node}")  # paho 1.x
         if self.user:
             self.cli.username_pw_set(self.user, self.password or "")
         self.cli.will_set(self.avail_t, "offline", qos=1, retain=True)
@@ -100,8 +105,7 @@ class MqttBridge:
             "value_template": ("{{ 'triggered' if value_json.disparo else "
                                "('armed_away' if value_json.alarme else 'disarmed') }}"),
             "payload_arm_away": "ARM_AWAY", "payload_disarm": "DISARM",
-            "code_arm_required": False, "code_disarm_required": False,
-            "supported_features": ["arm_away"]}))
+            "code_arm_required": False, "code_disarm_required": False}))
         pub("binary_sensor", "disparo", self._ent("disparo", "Disparo", {
             "device_class": "safety",
             "value_template": "{{ 'ON' if value_json.disparo else 'OFF' }}",
@@ -131,13 +135,18 @@ class MqttBridge:
         if self.cli and self._connected:
             self.cli.publish(self.avail_t, "online" if online else "offline", qos=1, retain=True)
 
+    def _ctrl(self, key):
+        # control() faz um sleep curto; dispara numa thread p/ não travar a rede do paho
+        import threading
+        threading.Thread(target=self.relay.control, args=(CMD[key],), daemon=True).start()
+
     def _on_message(self, cli, userdata, msg):
         payload = msg.payload.decode(errors="ignore").strip().upper()
         if msg.topic == self._cmd_t("cerca"):
-            self.relay.control(CMD["cerca_on" if payload in ("ON", "1", "TRUE") else "cerca_off"])
+            self._ctrl("cerca_on" if payload in ("ON", "1", "TRUE") else "cerca_off")
         elif msg.topic == self._cmd_t("alarme"):
             if payload == "DISARM":
-                self.relay.control(CMD["disarm"])
+                self._ctrl("disarm")
             elif payload in ("ARM_AWAY", "ARM_HOME", "ARM_NIGHT"):
-                self.relay.control(CMD["arm"])
+                self._ctrl("arm")
         print(f"[mqtt] comando {msg.topic} = {payload}")

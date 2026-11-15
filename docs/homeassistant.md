@@ -13,7 +13,8 @@ Para controle no HA **agora**, use o add-on MQTT (depende da nuvem Intelbras):
 Substituir o relay da Intelbras por um **relay local** (`relay/elc_local_relay.py`):
 a central conecta nele e passa a ser controlada 100% localmente. **O controle
 (arme/desarme/choque/tudo) já está confirmado ao vivo** pelo painel web/stdin do
-relay (ver [STATUS](STATUS.md)). Falta a ponte para o Home Assistant.
+relay (ver [STATUS](STATUS.md)). A ponte local para o Home Assistant via MQTT já
+está implementada (`relay/mqtt_bridge.py`) — falta só validar ao vivo.
 
 ### Integração local via MQTT Discovery (pronta)
 O relay traz uma ponte MQTT (`relay/mqtt_bridge.py`) que cria as entidades no HA

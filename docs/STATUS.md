@@ -4,8 +4,9 @@ Estado da engenharia reversa. **Contribuições são bem-vindas** — se você t
 ELC 6012 NET, pode rodar os testes abertos e mandar a captura (veja
 [CONTRIBUTING](../CONTRIBUTING.md)).
 
-> As branches `main` e `experimental` estão sincronizadas. Trabalho em curso
-> (ex.: integração HA local) pode ficar na `experimental` antes de validar.
+> `main` tem o núcleo validado (controle local + integração HA via MQTT).
+> A `experimental` fica à frente com trabalho ainda não testado ao vivo
+> (ex.: modo proxy/híbrido com a nuvem), antes de mesclar.
 
 Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 
@@ -36,7 +37,7 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | **Trocar a rede Wi-Fi** (`2f 12 02 c0`) | 🟡 | gravação mapeada (SSID+senha); efeito via relay a testar |
 | `04 00` usuários (nomes/código) | ✅ | código em texto claro no bloco |
 | Opcodes extras (`38 5b`/`38 5c`/`0b 01`/`46 a0`/`46 10`/`00 60`) | 🟡 | observados (PROTOCOL §6); significado a confirmar |
-| `3f aa` pedir MAC | ✅ | cross-val. bobaoapae (`GET_MAC`) |
+| `3f aa` pedir MAC | 🟡 | cross-val. bobaoapae (`GET_MAC`); sem teste dirigido |
 | Parear sensor sem fio | ⬜ | **teste aberto** (precisa central desarmada) |
 
 ## Relay local
@@ -52,7 +53,7 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Detecção de recusa (NACK `f0 fd <code>`) | ✅ loga `[RECUSADO] code 0xNN` e reenvia (até 2x) |
 | Interface web (painel no relay) | ✅ **validado ao vivo**: via principal de controle (arme/desarme/choque) |
 | Bypass / PGM / pânico via relay | 🟡 implementados; faltam testes ao vivo |
-| Integração MQTT → Home Assistant local | ⬜ planejado |
+| Integração MQTT → Home Assistant local | 🟡 implementada (`relay/mqtt_bridge.py`, MQTT Discovery); falta validar ao vivo |
 
 ---
 

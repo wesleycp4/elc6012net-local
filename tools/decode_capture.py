@@ -70,8 +70,14 @@ def decode(path, port):
             peers[r[0]] = peers.get(r[0], 0) + 1
     if not peers:
         print("nenhum tráfego na porta", port); return
-    # central = quem mais aparece como origem de frames grandes? heurística: o nuvem é o IP não-privado
-    relay = max(peers, key=lambda ip: (not ip.startswith(("10.","192.168.","172."))), default=None)
+    # o servidor (relay/nuvem) é quem ESCUTA na porta 9009 (funciona p/ nuvem e local,
+    # onde os dois IPs são privados). src na 9009 = servidor; dst na 9009 = servidor.
+    relay = None
+    for ts, pkt in pkts:
+        r = tcp(pkt)
+        if not r: continue
+        if r[1] == port: relay = r[0]; break
+        if r[3] == port: relay = r[2]; break
     print(f"# fluxo porta {port} — relay/nuvem = {relay}\n")
     for ts, pkt in pkts:
         r = tcp(pkt)

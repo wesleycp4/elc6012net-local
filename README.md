@@ -45,7 +45,7 @@ Mapa completo e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
 | [`tools/setup_ap.sh`](tools/setup_ap.sh) | Transforma um Linux em gateway/AP para a central |
 | [`tools/relay_tap.py`](tools/relay_tap.py) | Proxy transparente com log (observa central⇄nuvem) |
 | [`tools/decode_capture.py`](tools/decode_capture.py) | Decodifica um `.pcap` (mascara SSID/senha) |
-| [`docs/homeassistant.md`](docs/homeassistant.md) | Uso com Home Assistant (hoje via nuvem; local no roadmap) |
+| [`docs/homeassistant.md`](docs/homeassistant.md) | Uso com Home Assistant (local via MQTT, sem nuvem) |
 
 ## Caminho rápido
 
