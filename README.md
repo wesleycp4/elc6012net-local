@@ -30,6 +30,8 @@ Assistant, sem nuvem nenhuma.
   sessão de controle, status ao vivo, painel web e retry automático na recusa.
 - ✅ **Integração Home Assistant local** via MQTT Discovery (`relay/mqtt_bridge.py`):
   cria as entidades sozinho, controla sem nuvem/internet — ver [docs/homeassistant.md](docs/homeassistant.md).
+  Também empacotado como **App do Home Assistant**: adicione este repositório na
+  loja de Apps e instale o **ELC 6012 NET Local** (o **Híbrido** é experimental).
 - 🟡 Bypass e PGM via relay (implementados, faltam testes), PGM temporizada,
   mapeamento de bits de zona.
 - ⬜ Pareamento de sensor sem fio; opcodes extras (PROTOCOL §6).

@@ -328,9 +328,16 @@ def main():
     ap.add_argument("--code", default="", help="(ignorado) a central não autentica o servidor; mantido p/ compatibilidade")
     ap.add_argument("--mqtt", default="", help="broker MQTT p/ Home Assistant: host[:porta] (porta padrão 1883)")
     ap.add_argument("--mqtt-user", default=None)
-    ap.add_argument("--mqtt-pass", default=None)
+    ap.add_argument("--mqtt-pass", default=None,
+                    help="senha do broker (ou variável de ambiente MQTT_PASSWORD, que não aparece no ps)")
     ap.add_argument("--mqtt-node", default="elc6012net", help="id do dispositivo no HA")
+    ap.add_argument("--mqtt-name", default="Intelbras ELC 6012 NET", help="nome do dispositivo no HA")
+    ap.add_argument("--daemon", action="store_true",
+                    help="sem terminal interativo (serviço/App do HA): não lê comandos do stdin")
     ns = ap.parse_args()
+    if ns.mqtt_pass is None:
+        import os
+        ns.mqtt_pass = os.environ.get("MQTT_PASSWORD")
     host, port = ns.listen.rsplit(":", 1)
     r = Relay()
     r.session_open = bytes.fromhex(ns.session_hex.replace(" ", ""))
@@ -341,7 +348,8 @@ def main():
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from mqtt_bridge import MqttBridge
         mh, _, mp = ns.mqtt.partition(":")
-        r.mqtt = MqttBridge(r, mh, int(mp or 1883), ns.mqtt_user, ns.mqtt_pass, ns.mqtt_node)
+        r.mqtt = MqttBridge(r, mh, int(mp or 1883), ns.mqtt_user, ns.mqtt_pass, ns.mqtt_node,
+                            name=ns.mqtt_name)
         r.mqtt.start()
     if ns.web:
         start_web(r, ns.web)
@@ -374,6 +382,8 @@ def main():
             threading.Thread(target=r.poller, args=(conn, ns.poll), daemon=True).start()
     threading.Thread(target=accept_loop, daemon=True).start()
 
+    if ns.daemon:                      # serviço: sem stdin, só fica rodando
+        threading.Event().wait()
     for line in sys.stdin:
         cmd = line.strip().lower()
         if cmd == "quit": break

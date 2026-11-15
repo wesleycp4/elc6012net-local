@@ -25,7 +25,18 @@ Entidades criadas: `switch.cerca` (choque), `alarm_control_panel.alarme`
 (armar/desarmar, estado `disparo`→`triggered`), `binary_sensor.disparo` e
 `binary_sensor.zona_1..8`.
 
-**Passo a passo:**
+**Jeito mais fácil — App do HA (HA OS/Supervised):** em *Configurações → Apps →
+Loja → ⋮ → Repositórios*, adicione `https://github.com/wesleycp4/elc6012net-local`
+e instale um dos dois (só um por vez, ambos usam a porta 9009):
+
+- **ELC 6012 NET Local** — modo validado, sem nuvem (código da `main`).
+- **ELC 6012 NET Híbrido (experimental)** — mantém a nuvem/app Intelbras e injeta
+  comandos locais (código da `experimental`, não testado ao vivo).
+
+As credenciais do Mosquitto vêm sozinhas. Cada App tem a aba *Documentação* com o
+redirecionamento de DNS necessário (`amt8000.intelbras.com.br → IP do HA`).
+
+**Passo a passo manual (fora do HA OS):**
 1. Tenha um broker MQTT na rede — no HA OS, instale o add-on **Mosquitto broker** e
    a integração **MQTT** (a descoberta já vem ligada).
 2. No gateway onde roda o relay: `pip install paho-mqtt`.
