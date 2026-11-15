@@ -95,7 +95,8 @@ class Relay:
         self.session_open = bytes.fromhex(SESSION_OPEN_HEX)
         self.session_opened = False
         self.SID = b"\x00\x00\x00\x01"  # índice de sessão deste relay
-        self._pending_cmd = None        # (opcode, ts) do último comando, p/ detectar NACK
+        self._pending_cmd = None        # (opcode, ts, retry) do comando, p/ detectar NACK
+        self._last_control = None       # último payload de controle, p/ reenviar numa recusa
 
     def send(self, session: bytes, payload: bytes, quiet: bool = False):
         if not self.sock:
@@ -103,8 +104,6 @@ class Relay:
         frame = build(session, payload)
         with self.lock:
             self.sock.sendall(frame)
-        if payload[:2] in (b"\x40\x1e", b"\x40\x1f", b"\x45\xaf", b"\x40\x1a"):
-            self._pending_cmd = (payload[:2].hex(), time.time())   # p/ casar com um NACK
         if not quiet:                      # poll/keepalive passam quiet=True (não poluem o terminal)
             print(f"  -> {frame.hex(' ')}")
 
@@ -162,16 +161,22 @@ class Relay:
             # Se acabamos de mandar um comando e veio f0fd logo em seguida, é RECUSA.
             # O byte após f0fd é o código: 0x21 = função não habilitada p/ app/remoto
             # (mesmo código que a PGM dá fora do modo "acesso via app"); 0x3f visto no bypass.
-            if c == "f0fd" and self._pending_cmd and time.time() - self._pending_cmd[1] < 1.0:
+            if c == "f0fd" and self._pending_cmd and time.time() - self._pending_cmd[1] < 1.5:
                 code = frame[8] if len(frame) >= 9 else None
-                op = self._pending_cmd[0]
                 # num keepalive o byte após f0fd é o checksum (xck); num NACK é um
-                # código de recusa que NÃO bate com o xck (ex.: 0x21, 0x3f).
+                # código de recusa que NÃO bate com o xck (ex.: 0x21, 0x3f, 0x00).
                 if code is not None and code != xck(frame[:8]):
-                    print(f"[RECUSADO] comando {op} -> NACK code 0x{code:02x}. "
-                          f"Provável: função NÃO habilitada para controle via app/remoto na central "
-                          f"(mesmo caso da PGM fora do modo 'acesso via app').")
-                self._pending_cmd = None
+                    op, _ts, retry = self._pending_cmd
+                    self._pending_cmd = None
+                    if retry < 2 and self._last_control is not None:
+                        print(f"[RECUSADO] {op} code 0x{code:02x} — reabrindo e reenviando ({retry+1}/2)...")
+                        pl = self._last_control
+                        threading.Thread(target=lambda: self.control(pl, retry + 1), daemon=True).start()
+                    else:
+                        print(f"[RECUSADO] {op} code 0x{code:02x} — falhou após retentativas. "
+                              f"Se 0x21 persistir, pode ser permissão/modo de controle via app na central.")
+                else:
+                    self._pending_cmd = None
         elif c == "3900":                    # resposta de histórico de eventos
             self._hist(frame[8:])
         elif c == "f0f7":
@@ -181,8 +186,9 @@ class Relay:
             self.send(b"\x00\x00\x00\x00", time_sync_payload())
             self.open_session()
         elif c == "f0f0":                    # confirmação de sessão (resposta da central)
+            if not self.session_opened:      # só avisa na 1ª abertura (reaberturas por comando ficam quietas)
+                print("[SESSAO] aberta -> status e comandos liberados")
             self.session_opened = True
-            print(f"[SESSAO] aberta (central confirmou {frame[8:-1].hex()}) -> status e comandos liberados")
         else:
             print(f"[??] {frame.hex(' ')} -> ack")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
@@ -224,14 +230,18 @@ class Relay:
                 try: self.send(self.SID, CMD_MAP["status"], quiet=True)
                 except OSError: return
 
-    def control(self, payload):
-        """Envia um comando de controle REABRINDO a sessão antes (como o app faz).
-        A sessão de controle é mantida só respondendo o f0f7 da central (f0fe) + os
-        polls de status. NUNCA mandamos f0f1 (f0f1 = DISCONNECT: derruba a sessão de
-        controle e o próximo comando volta NACK 0x21)."""
+    def control(self, payload, _retry=0):
+        """Envia um comando de controle. Reabre a sessão (f0f0, quiet) e, após uma
+        pequena folga p/ a central processar, manda o comando — como o app. NUNCA
+        manda f0f1 (=DISCONNECT, derruba a sessão -> NACK 0x21). Numa recusa, o
+        handle() chama isto de novo (até 2x) reabrindo e reenviando."""
         if not self.sock:
             print("[!] central não conectada ainda"); return
+        if _retry == 0:
+            self._last_control = payload
         self.send(self.SID, self.session_open, quiet=True)   # reabre a sessão de controle
+        time.sleep(0.15)                                      # deixa a central processar a reabertura
+        self._pending_cmd = (payload[:2].hex(), time.time(), _retry)
         self.send(self.SID, payload)                          # manda o comando
 
 

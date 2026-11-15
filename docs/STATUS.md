@@ -18,9 +18,9 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Arme/desarme/choque `40 1e` | ✅ | partições 1 / 2 / 255 |
 | Eventos `10 b2` | 🟡 | chega e é confirmado; faltam decodificar todos os códigos |
 | Histórico `39 00` | ✅ | leitura por página; registro = Contact-ID + timestamp |
-| Keepalive `f0 f1`/`f0 fd` | ✅ | **servidor pinga `f0 f1`, central responde `f0 fd`/`f0 fe`**; relay pinga proativamente |
+| Manter sessão (`f0 f7`→`f0 fe`) | ✅ | central pinga `f0 f7`, servidor responde `f0 fe`; **`f0 f1` é DISCONNECT, nunca enviar** |
 | Registro `3f 94` | ✅ | MAC + modelo, sem auth |
-| Pânico `40 1a 01` | ✅ | dispara emergência; confirmado. `40 1a 00` observado, efeito não confirmado |
+| Pânico `40 1a <tipo>` | ✅ | `01`=audível (confirmado), `00`=silencioso, `02`=fogo, `03`=médico (cross-val. bobaoapae) |
 | Acionar PGM `45 af` | ✅ | `45 af <pgm base-0> <estado>`; confirmado (PGM no modo app) |
 | Sinal Wi-Fi `[163]` (RSSI com sinal) | 🟡 | consistente, falta medição independente |
 | Bypass `40 1f` | ✅ | `40 1f ff <z1..z8>`, confirmado em captura |
@@ -42,13 +42,14 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Enquadramento (leitura/escrita de frames) | ✅ **validado ao vivo**; resync por cabeçalho (lida com variante f0fd/f0fe +1 byte) |
 | Registro + hora | ✅ **validado ao vivo** (central registra, pede hora, recebe) |
 | Abertura de sessão de controle `f0 f0` | ✅ **validado ao vivo**: payload fixo `f0 f0 03 03 06 05 09 00 00 00 01` (sem código) |
-| Keepalive `f0 f1` proativo | ✅ **validado ao vivo**: relay pinga, sessão fica de pé (6+ min) |
+| Manter a sessão | ✅ responder o `f0 f7` da central + polls; **nunca** mandar `f0 f1` (=DISCONNECT) |
 | Status ao vivo (sem nuvem) | ✅ **validado ao vivo**: choque/alarme/zonas/disparo/relógio/RSSI reais |
-| Comandos (arme/choque) via relay | 🟡 causa do NACK achada: o relay mandava `f0 f1` (=DISCONNECT) e derrubava a sessão de controle → `40 1e` caía em sessão fechada (NACK `0x21`). Removido o `f0 f1` + reabre a sessão antes de cada comando — **falta re-testar efeito físico** |
+| **Comandos (arme/desarme/choque/tudo) via relay** | ✅ **validado ao vivo (física)**: reabre a sessão + `40 1e`; retry automático na recusa |
 | Reconexão (churn de WiFi) | ✅ reset de buf/sessão por conexão; threads atadas à conexão |
-| Bypass / PGM / pânico via relay | ⬜ implementado; falta validar ao vivo |
+| Detecção de recusa (NACK `f0 fd <code>`) | ✅ loga `[RECUSADO] code 0xNN` e reenvia (até 2x) |
+| Interface web (painel no relay) | ✅ **validado ao vivo**: via principal de controle (arme/desarme/choque) |
+| Bypass / PGM / pânico via relay | 🟡 implementados; faltam testes ao vivo |
 | Integração MQTT → Home Assistant local | ⬜ planejado |
-| Interface web (painel no relay) | 🟡 implementada (`--web`); falta validar ao vivo |
 
 ---
 
@@ -60,7 +61,7 @@ faça a ação pelo app **anotando a hora** e mande a captura decodificada
 (`tools/decode_capture.py`, que já mascara segredos).
 
 1. ~~Bypass `40 1f`~~ ✅ confirmado.
-2. **PGM temporizada** — mude os segundos de uma PGM (0 → N → 0).
-3. **Parear sensor sem fio** — com a central **desarmada**, cadastre um sensor.
-4. **Validar o relay local** — rode o `relay/elc_local_relay.py`, redirecione a
-   central para ele e confirme arme/desarme/choque **sem nuvem**.
+2. ~~Validar o relay local (arme/desarme/choque sem nuvem)~~ ✅ **confirmado ao vivo**.
+3. **PGM temporizada** — mude os segundos de uma PGM (0 → N → 0).
+4. **Parear sensor sem fio** — com a central **desarmada**, cadastre um sensor.
+5. **Bypass / PGM / pânico via relay** — confirme o efeito físico pelo relay.

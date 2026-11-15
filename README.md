@@ -20,14 +20,16 @@ Assistant, sem nuvem nenhuma.
 
 ## Estado atual
 
-- ✅ **Protocolo de controle** mapeado (registro, status de 164 bytes,
-  arme/desarme/choque, eventos) — ver [PROTOCOL.md](PROTOCOL.md).
+- ✅ **Controle local confirmado ao vivo, sem nuvem**: a central conecta no relay e
+  responde a arme/desarme, choque e "tudo ligado/desligado" — validado fisicamente.
+- ✅ **Protocolo de controle** mapeado (registro, abertura de sessão `f0 f0`, status
+  de 164 bytes, `40 1e`, eventos, pânico, PGM) — ver [PROTOCOL.md](PROTOCOL.md).
 - ✅ **Protocolo de configuração** mapeado (zonas + atributos, nome, pulsos falhos,
-  PGMs, usuários, Wi-Fi) — é leitura/escrita de blocos de memória.
-- 🟡 **Relay local** (`relay/elc_local_relay.py`): protótipo com enquadramento
-  validado contra frames reais; **falta validar ao vivo** e implementar a
-  abertura de sessão (`f0 f0`), ainda não decodificada.
-- ⬜ Bypass, PGM temporizada, pareamento de sensor, MQTT→HA, interface web.
+  PGMs, usuários, Wi-Fi) — leitura/escrita de blocos de memória.
+- ✅ **Relay local** (`relay/elc_local_relay.py`): enquadramento com re-sincronização,
+  sessão de controle, status ao vivo, painel web e retry automático na recusa.
+- 🟡 Bypass e PGM via relay (implementados, faltam testes), PGM temporizada.
+- ⬜ Integração MQTT → Home Assistant local, pareamento de sensor.
 
 Mapa completo e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
 
@@ -44,9 +46,17 @@ Mapa completo e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
 
 ## Caminho rápido
 
-1. Ponha a central numa rede sob seu controle e capture o tráfego (`tools/setup_ap.sh`).
-2. Decodifique com `tools/decode_capture.py captura.pcap`.
-3. Rode o relay local e redirecione a central para ele (instruções em `relay/`).
+1. Ponha a central numa rede sob seu controle (`tools/setup_ap.sh`) e redirecione o
+   servidor da nuvem para o relay (DNS ou DNAT — ver [relay/README.md](relay/README.md)).
+2. Rode o relay e abra o painel:
+   ```bash
+   python3 relay/elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --web 8080
+   # painel: http://127.0.0.1:8080  (aciona a cerca — só local)
+   ```
+3. Controle pelo painel web (arme/desarme/choque) ou pelo stdin
+   (`shockon`, `arm`, `allon`…). O status aparece ao vivo conforme a central muda.
+
+Capturar/decodificar tráfego para estudar o protocolo: `tools/decode_capture.py captura.pcap`.
 
 ## ⚠️ Segurança das capturas
 
@@ -58,7 +68,10 @@ esses dados.
 ## Créditos
 
 Baseado em [rhacius/ha-elc6012net](https://github.com/rhacius/ha-elc6012net),
-que mapeou o protocolo app⇄nuvem e criou o add-on Home Assistant.
+que mapeou o protocolo app⇄nuvem e criou o add-on Home Assistant. Os opcodes de
+controle foram cruzados com [bobaoapae/guardian-api-intelbras](https://github.com/bobaoapae/guardian-api-intelbras)
+(cliente de nuvem + Home Assistant) — ver §7 do [PROTOCOL.md](PROTOCOL.md). O lado
+servidor (relay local, sem nuvem) é a peça que este projeto acrescenta.
 
 ## Licença
 
