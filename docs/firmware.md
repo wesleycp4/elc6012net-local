@@ -39,12 +39,36 @@ Mantém todo o firmware original (inclusive a conversa com a placa base); só mu
 onde o módulo conecta. Como o ESP8266 não tem secure boot nem flash encryption, a
 imagem alterada é aceita.
 
-1. **Backup primeiro.** Ligue um adaptador USB-serial de **3,3 V** aos pinos do
-   módulo (TX/RX/GPIO0/EN/GND; GPIO0→GND no boot para entrar em modo de gravação).
+1. **Backup primeiro.** O módulo é encaixado (header) na placa base — removê-lo e
+   ler **na bancada** é o jeito mais limpo e seguro (longe da alta tensão do
+   energizador). Antes de tirar: fotografe os dois lados e **marque a orientação**
+   (pino 1) para recolocar igual.
+
+   Use um adaptador **USB-TTL de lógica 3,3 V** (se tiver jumper 5V/3,3V, deixe em
+   3,3 V e confira no multímetro). **Alimentação é o erro nº 1:** o pino 3V3 do
+   adaptador costuma ser fraco demais (o ESP8266 puxa picos de ~350–500 mA) — use uma
+   fonte 3,3 V separada de **≥500 mA**, com **GND comum**, e um capacitor 10 µF +
+   100 nF perto do módulo. Confira os nomes na **serigrafia do módulo**, não a posição:
+
+   | Pad do módulo | Liga em |
+   |---|---|
+   | `3V3` | 3,3 V da fonte |
+   | `GND` | GND (comum: fonte + adaptador) |
+   | `EN` (CH_PD) | 3,3 V (10k) |
+   | `IO15` | GND (10k) |
+   | `IO0` | GND → modo de gravação/leitura |
+   | `IO2` | solto, ou 3,3 V por 10k |
+   | `TXD` | **RX** do adaptador |
+   | `RXD` | **TX** do adaptador |
+
+   (TX do módulo cruza no RX do adaptador e vice-versa.)
    ```bash
-   esptool.py flash_id                              # confirma o chip e o tamanho
-   esptool.py read_flash 0 0x400000 dump.bin        # ajuste o tamanho ao flash_id
+   pip install esptool
+   esptool --port COM? flash_id                     # confirma o chip e o tamanho
+   esptool --port COM? read_flash 0 0x200000 dump.bin   # 0x200000=2MB; ajuste ao flash_id
    ```
+   Leia **duas vezes** e compare os arquivos; se baterem, o backup é confiável.
+   Para voltar a usar o módulo, tire `IO0` do GND e religue (ou só recoloque na placa).
 2. **Ache a string** `amt8000.intelbras.com.br` (e veja se há `amt.intelbras.com.br`):
    ```bash
    grep -abo "amt8000.intelbras.com.br" dump.bin
