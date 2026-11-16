@@ -507,6 +507,9 @@ def main():
     ap.add_argument("--upstream", default="", help="[EXPERIMENTAL] modo proxy/híbrido: "
                     "IP da nuvem real (host[:porta]) — repassa tudo p/ a Intelbras (app segue "
                     "funcionando) e injeta comandos locais. Não testado; pode dar conflito.")
+    ap.add_argument("--inject-session", type=int, default=2, choices=range(1, 16), metavar="1-15",
+                    help="[EXPERIMENTAL] índice da sessão usada p/ os comandos locais no modo proxy. "
+                    "A nuvem dá um índice por cliente (ponte de nuvem=1, app=2…): use um livre.")
     ap.add_argument("--mqtt-name", default="Intelbras ELC 6012 NET", help="nome do dispositivo no HA")
     ap.add_argument("--tz", default=os.environ.get("TZ", ""),
                     help="fuso da hora enviada à central, ex.: America/Sao_Paulo (padrão: env TZ ou hora local)")
@@ -523,6 +526,7 @@ def main():
         uh, _, up_ = ns.upstream.partition(":")
         r.proxy = True
         r.upstream = (uh, int(up_ or 9009))
+        r.inject_sid = bytes([0, 0, 0, ns.inject_session])
         print(f"[proxy] modo híbrido (EXPERIMENTAL): repassando p/ a nuvem {r.upstream[0]}:{r.upstream[1]}")
         print("[proxy] a central fala com a nuvem (app/avisos seguem) e o relay injeta comandos locais.")
     if ns.code:
