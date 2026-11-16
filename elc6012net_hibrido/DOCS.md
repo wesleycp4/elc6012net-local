@@ -41,5 +41,6 @@ Neste modo o App fica **no meio** entre a central e a nuvem Intelbras:
 | Opção | Padrão | Para quê |
 |---|---|---|
 | `upstream` | `52.67.212.35:9009` | Endereço da nuvem Intelbras real |
+| `inject_session` | `2` | Sessão dos comandos locais. A nuvem dá uma por cliente (ponte de nuvem = 1, app = 2…); com vários clientes, use um número livre (ex.: 5) |
 | `node` | `elc6012_hibrido` | ID do dispositivo no MQTT/HA |
 | `name` | `ELC 6012 NET (híbrido)` | Nome do dispositivo no HA |
