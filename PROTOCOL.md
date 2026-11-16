@@ -49,29 +49,21 @@ placa base do eletrificador (observado em unidade com placa base **1.1.0** / mó
 **1.2.11**). A fragilidade da camada online combina com um chip barato e de baixo
 esforço de segurança.
 
-**Isso responde "dá para trocar o firmware do ESP?":**
+O **ESP8266 não tem secure boot nem criptografia de flash** — esses recursos só
+existem a partir do ESP32. Ou seja, a Intelbras **não tem como** ter travado o chip
+por assinatura ou criptografia: a flash SPI é legível e regravável por `esptool`
+(barrando só o acesso físico aos pinos). O endereço `amt8000.intelbras.com.br` fica
+**nesta flash** (não na config lida por `3f 12`). Mas o ESP **não é a central
+inteira** — a lógica de alarme/cerca mora num MCU na placa base, e o ESP só faz a
+ponte, falando com esse MCU por uma serial própria **ainda não mapeada**.
 
-- O **ESP8266 não tem secure boot nem criptografia de flash** — esses recursos só
-  existem a partir do ESP32. Ou seja, a Intelbras **não tem como** ter travado o
-  chip por assinatura ou criptografia; a flash SPI é legível e regravável por
-  `esptool` (barrando só o acesso físico aos pinos). Confirme antes mesmo assim:
-  `esptool.py flash_id` e `esptool.py read_flash 0 0x400000 dump.bin` (faça o
-  **backup** antes de tudo).
-- O endereço `amt8000.intelbras.com.br` está **nesta flash** (não na config lida por
-  `3f 12`). Para eliminar o redirecionamento de DNS sem reescrever o firmware:
-  ler a flash → achar a string → trocar pelo seu endereço (**do mesmo tamanho ou
-  menor**, completando com `00`) → recalcular checksum/hash da imagem → regravar.
-  O resto do firmware fica intacto, inclusive a conversa com a placa base.
-- ⚠️ **Mas o ESP não é a central inteira.** A lógica de alarme/cerca mora num MCU na
-  placa base; o ESP provavelmente só faz a ponte com a nuvem, falando com esse MCU
-  por **serial, num protocolo próprio ainda não mapeado**. Trocar o firmware inteiro
-  do ESP (Tasmota/ESPHome) derruba a função de alarme até esse protocolo ser mapeado
-  (sniffando TX/RX entre módulo e placa base). Por isso o caminho de baixo risco é
-  **só mover a string de endereço**, não reescrever o firmware.
-- ⚠️ **Segurança física:** é um energizador ligado à rede elétrica, com alta tensão.
-  Tire da tomada, desligue a bateria e espere os capacitores descarregarem antes de
-  abrir. Risco de inutilizar a central, perder a garantia, e uma atualização OTA da
-  Intelbras desfaz a alteração. Nada disso foi testado aqui — o dump **não foi feito**.
+Os caminhos para mexer no firmware (mover só a string do endereço × gravar um
+firmware próprio tipo ESPHome), o que cada um exige e os avisos de segurança física
+estão em **[docs/firmware.md](docs/firmware.md)**.
+
+> Há dois MACs: o **L2 do Wi-Fi** (`08:3a:8d:…`, OUI Espressif) e o **MAC do
+> protocolo** (`80:85:44:…`, no registro `3f 94` e no status `[157..162]`) — este é
+> um ID de conta/placa, não o MAC de rede.
 
 (Cross-validação: §1.2 do [projeto rhacius](https://github.com/rhacius/ha-elc6012net).)
 
@@ -178,6 +170,7 @@ Offsets confirmados (0-based, a partir do byte 0 do frame):
 | `[54..55]` | zonas disparadas (bitmap, mesma ordem) ✅ (disparo da zona 3 = `04 00`) |
 | `[62..63]` | zonas em bypass (bitmap, mesma ordem) ✅ |
 | `[72..77]` | relógio: dia mês ano hh mm ss (**binário**, ex.: `10 0b 1a` = 16/11/26) |
+| `[152]` | muda junto com o dia do mês (`[72]`) — contador/índice? 🟡 |
 | `[153..155]` | versão do módulo (`01 02 0b` = 1.2.11) 🟡 |
 | `[157..162]` | MAC da central (o mesmo do registro `3f 94`) ✅ |
 | `[163]` | sinal Wi-Fi: RSSI; se `>127`, ler como negativo (`256 - v` = \|dBm\|) 🟡 |

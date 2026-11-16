@@ -87,4 +87,6 @@ faça a ação pelo app **anotando a hora** e mande a captura decodificada
    hora e confira o evento `10 b2`.
 6. **Dump da flash do ESP8266** (avançado, com a central aberta) — ler a flash do
    módulo com `esptool`, achar `amt8000.intelbras.com.br` e testar mover a string
-   para um endereço local (elimina o redirecionamento de DNS). Ver [PROTOCOL §1.1](../PROTOCOL.md).
+   para um endereço local (elimina o redirecionamento de DNS). Ver [firmware.md](firmware.md).
+7. **Mapear a serial ESP↔placa base** (avançado) — grampear TX/RX entre o módulo e o
+   MCU do eletrificador. É o que trava um firmware próprio (ESPHome). Ver [firmware.md](firmware.md).
