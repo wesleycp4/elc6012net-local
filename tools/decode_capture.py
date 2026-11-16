@@ -38,8 +38,8 @@ OPCODES = {
 }
 CID = {"407": "arme/desarme remoto", "409": "arme/desarme controle remoto",
        "130": "disparo de zona", "120": "panico audivel", "122": "panico silencioso",
-       "422": "PGM", "306": "programacao alterada", "410": "acesso remoto",
-       "412": "download/acesso"}
+       "422": "PGM", "306": "programacao alterada", "410": "fim de sessao remota",
+       "412": "?"}
 
 def contact_id(b: bytes) -> str:
     """Evento 10 b2 (PROTOCOL §4.7): qualificador + código Contact-ID (0 = 0x0a),
