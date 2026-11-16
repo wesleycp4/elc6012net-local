@@ -12,10 +12,10 @@ Como pôr a central para conectar aqui (no notebook-gateway da central) —
 redirecione o servidor da nuvem para este relay, por DNS ou DNAT:
     # DNS (dnsmasq): resolve o host da nuvem para o IP do relay
     address=/amt8000.intelbras.com.br/10.0.0.1
-    # ou DNAT (nftables): reescreve o destino da nuvem para o relay
-    sudo nft add rule ip nat prerouting ip daddr <IP-da-nuvem> tcp dport 9009 \
-        dnat to 10.0.0.1:9009
-    python3 elc_local_relay.py --listen 0.0.0.0:9009 --web 8080
+    # ou DNAT (nftables) pela origem: todo TCP 9009/8080 da central -> relay
+    sudo nft add rule ip nat prerouting ip saddr <IP-da-central> \
+        tcp dport { 8080, 9009 } ip daddr != 10.0.0.1 dnat to 10.0.0.1:9009
+    python3 elc_local_relay.py --listen 0.0.0.0:9009 --web 8088 --tz America/Sao_Paulo
 
 Controle: painel web em http://127.0.0.1:8080 (via principal), Home Assistant via
 MQTT (--mqtt, ver docs/homeassistant.md), ou stdin:
@@ -26,7 +26,7 @@ MQTT (--mqtt, ver docs/homeassistant.md), ou stdin:
 Enquanto isto roda, a central não fala com a Intelbras (sem as notificações da
 nuvem deles). Aciona uma CERCA ELÉTRICA real — teste ciente disso.
 """
-import argparse, json, socket, struct, sys, threading, time
+import argparse, json, os, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
 
@@ -44,8 +44,23 @@ def build(session: bytes, payload: bytes) -> bytes:
 def bcd(n: int) -> int:
     return ((n // 10) << 4) | (n % 10)
 
+# Fuso da hora enviada à central (f0 80). A nuvem manda a hora LOCAL (ex.: Brasília);
+# se a máquina do relay estiver em UTC, a central fica 3h adiantada e os eventos/
+# histórico saem com hora errada. Use --tz America/Sao_Paulo (ou a env TZ).
+TZ = None
+
+def set_tz(name: str):
+    global TZ
+    if not name:
+        return
+    try:
+        from zoneinfo import ZoneInfo
+        TZ = ZoneInfo(name)
+    except Exception as e:           # sem tzdata no sistema: segue na hora local da máquina
+        print(f"[!] fuso '{name}' indisponível ({e}); usando a hora local da máquina")
+
 def time_sync_payload() -> bytes:
-    n = datetime.now()
+    n = datetime.now(TZ)
     wd = (n.isoweekday() % 7) + 1          # sex -> 6, como na captura
     return bytes([0xf0, 0x80,
                   bcd(n.year % 100), bcd(n.month), bcd(n.day),
@@ -119,16 +134,18 @@ class Relay:
         self.SID = b"\x00\x00\x00\x01"  # índice de sessão deste relay
         self._pending_cmd = None        # (opcode, ts, retry) do comando, p/ detectar NACK
         self._last_control = None       # último payload de controle, p/ reenviar numa recusa
+        self._ctrl_lock = threading.Lock()   # serializa control() (stdin/web/MQTT/retry)
+        self._ctrl_seq = 0              # muda a cada envio; invalida verificações antigas
         self.mqtt = None                # ponte MQTT→Home Assistant (opcional, --mqtt)
         # modo PROXY/híbrido (experimental, --upstream): repassa p/ a nuvem real e
         # injeta comandos numa sessão própria (índice 2) p/ não brigar com a sessão
         # da nuvem (índice 1).
-        self._ctrl_lock = threading.Lock()   # serializa control() (stdin/web/MQTT/retry)
         self.proxy = False
         self.upstream = None            # (host, porta) da nuvem real
         self.up = None                  # socket upstream (p/ a nuvem)
         self.inject_sid = b"\x00\x00\x00\x02"
         self.tap_buf = b""
+        self.fwd_buf = b""             # central->nuvem pendente (filtro da sessão injetada)
 
     def send(self, session: bytes, payload: bytes, quiet: bool = False):
         if not self.sock:
@@ -172,26 +189,6 @@ class Relay:
             if self.mqtt:
                 self.mqtt.publish_state(self.last_status)
 
-    def _on_f0fd(self, frame: bytes):
-        """Detecta recusa de comando (NACK) e reenvia. Sem envios diretos aqui
-        além do retry (que chama control())."""
-        if not (self._pending_cmd and time.time() - self._pending_cmd[1] < 1.5):
-            return
-        code = frame[8] if len(frame) >= 9 else None
-        # num keepalive o byte após f0fd é o checksum (xck); num NACK é um código
-        # de recusa que NÃO bate com o xck (ex.: 0x21, 0x3f, 0x00).
-        if code is None or code == xck(frame[:8]):
-            self._pending_cmd = None; return
-        op, _ts, retry = self._pending_cmd
-        self._pending_cmd = None
-        if retry < 2 and self._last_control is not None:
-            print(f"[RECUSADO] {op} code 0x{code:02x} — reabrindo e reenviando ({retry+1}/2)...")
-            pl = self._last_control
-            threading.Thread(target=lambda: self.control(pl, retry + 1), daemon=True).start()
-        else:
-            print(f"[RECUSADO] {op} code 0x{code:02x} — falhou após retentativas. "
-                  f"Se 0x21 persistir, pode ser permissão/modo de controle via app na central.")
-
     def tap(self, frame: bytes, cmd: bytes):
         """Modo PROXY: só OBSERVA os frames (não envia nada — quem fala o protocolo
         com a central é a nuvem). Atualiza status/HA, loga eventos, detecta NACK dos
@@ -215,8 +212,9 @@ class Relay:
             mac = frame[11:17].hex(":")
             print(f"[REGISTRO] central MAC={mac} modelo={frame[17]:02x} -> ack")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
-        elif c == "f0fd":                    # NACK de comando ou resposta de keepalive
-            self._on_f0fd(frame)
+        elif c in ("f0fd", "f0fe"):          # f0fe=ACK; f0fd=resposta (ACK/recusa) ou keepalive
+            if c == "f0fd":
+                self._on_f0fd(frame)
         elif c == "3900":                    # resposta de histórico de eventos
             self._hist(frame[8:])
         elif c == "f0f7":
@@ -232,6 +230,59 @@ class Relay:
         else:
             print(f"[??] {frame.hex(' ')} -> ack")
             self.send(b"\x00\x00\x00\x00", bytes.fromhex("f0fe"))
+
+    def _on_f0fd(self, frame: bytes):
+        """Resposta da central logo após um comando nosso: `f0 fd <código>`.
+        - 0x00 = ACK genérico ("ok, sem dados") — NÃO é recusa (confirmado ao vivo:
+          bypass, choque e consultas respondem f0fd 00 e o efeito acontece).
+        - 0x21 = recusa: função não suportada/não habilitada (PGM fora do modo app,
+          pânico fogo/médico no ELC) ou sessão de controle caída.
+        - num keepalive o byte é o checksum (xck) — ignorado.
+        Reenvia (até 2x, reabrindo a sessão) só numa recusa real."""
+        if not (self._pending_cmd and time.time() - self._pending_cmd[1] < 1.5):
+            return
+        code = frame[8] if len(frame) >= 9 else None
+        op, _ts, retry = self._pending_cmd
+        if code is None or code == xck(frame[:8]):
+            return                          # keepalive, não é resposta ao comando
+        self._pending_cmd = None
+        if code == 0x00:
+            return                          # ACK
+        if retry < 2 and self._last_control is not None:
+            print(f"[RECUSADO] {op} code 0x{code:02x} — reabrindo e reenviando ({retry+1}/2)...")
+            pl = self._last_control
+            threading.Thread(target=lambda: self.control(pl, retry + 1), daemon=True).start()
+        else:
+            print(f"[RECUSADO] {op} code 0x{code:02x} — desisti. 0x21 = função não suportada "
+                  f"ou não habilitada para controle remoto (ex.: PGM fora do modo app).")
+
+    def _verify(self, payload: bytes, retry: int, seq: int):
+        """Para arme/desarme/choque (40 1e): confere no status se o estado mudou e
+        reenvia (até 2x) se não mudou. Cobre o caso de a central ignorar o comando
+        sem mandar recusa."""
+        part, want = payload[2], bool(payload[3])
+        keys = {0x01: ("alarme",), 0x02: ("choque",), 0xff: ("alarme", "choque")}.get(part)
+        if not keys:
+            return
+        conn = self.sock
+        time.sleep(2.5)
+        if self.sock is not conn or seq != self._ctrl_seq:
+            return
+        try:
+            self.send(self.my_sid, CMD_MAP["status"], quiet=True)
+        except OSError:
+            return
+        time.sleep(1.5)
+        if self.sock is not conn or seq != self._ctrl_seq or not self.last_status:
+            return
+        if all(self.last_status.get(k) == want for k in keys):
+            print(f"[OK] {payload.hex()} confirmado pelo status")
+        elif retry < 2:
+            print(f"[!] {payload.hex()} não refletiu no status — reenviando ({retry+1}/2)...")
+            self.control(payload, retry + 1)
+        else:
+            print(f"[!] {payload.hex()} não refletiu no status após retentativas "
+                  f"(zona aberta impede armar? central ocupada?)")
 
     def reader(self, conn):
         # Atado à conexão: sai se outra conexão assumir (a central reconecta no churn de WiFi).
@@ -279,20 +330,65 @@ class Relay:
         handle() chama isto de novo (até 2x) reabrindo e reenviando."""
         if not self.sock:
             print("[!] central não conectada ainda"); return
-        with self._ctrl_lock:                            # serializa toda a sequência
+        with self._ctrl_lock:                                 # serializa a sequência inteira
             if _retry == 0:
                 self._last_control = payload
+            self._ctrl_seq += 1
+            seq = self._ctrl_seq
             # No modo proxy injetamos numa sessão própria (índice 2) p/ não brigar com
             # a sessão da nuvem (índice 1); no modo substituir usamos a nossa (1).
-            sid = self.inject_sid if self.proxy else self.SID
+            sid = self.my_sid
             self.send(sid, self.session_open, quiet=True)   # (re)abre a sessão de controle
             time.sleep(0.15)                                 # deixa a central processar
             self._pending_cmd = (payload[:2].hex(), time.time(), _retry)
             self.send(sid, payload)                          # manda o comando
+        if payload[:2] == b"\x40\x1e" and len(payload) >= 4:
+            threading.Thread(target=self._verify, args=(payload, _retry, seq), daemon=True).start()
+
+    @property
+    def my_sid(self) -> bytes:
+        """Sessão usada pelos NOSSOS envios: a injetada no modo proxy, a 1 no local."""
+        return self.inject_sid if self.proxy else self.SID
 
     # ----- modo PROXY/híbrido (experimental) -----
+    def _c2u_filter(self, data: bytes) -> bytes:
+        """central -> nuvem: devolve o que deve seguir p/ a nuvem, SEM os frames da
+        nossa sessão injetada (respostas de status/comando na sessão 2). Repassar
+        esses frames poluía a sessão da nuvem — suspeita no teste em que o app
+        oficial não entrou. Bytes que não formam um frame nosso seguem crus."""
+        n = self.inject_sid[3]
+        b = self.fwd_buf + data
+        out = bytearray(); i = 0
+        while i < len(b):
+            h = b[i:i + 8]
+            if len(h) < 8:
+                if b[i] == 0:
+                    break                   # pode ser começo de cabeçalho: espera o resto
+                out.append(b[i]); i += 1; continue
+            echo = h[0:4] == bytes([0, 0, 0, n]) and h[6:8] in RX_CMDS  # eco "00 00 00 0N"
+            if not (valid_header(h) or echo):
+                out.append(b[i]); i += 1    # byte solto (ex.: 00 extra do f0fd): segue cru
+                continue
+            if echo and not valid_header(h):
+                # eco de comando ("00 00 00 0N 00 0b 40 1f ff 00"): o campo de tamanho
+                # não bate com o frame real -> descarta até o próximo cabeçalho válido
+                j = next((k for k in range(i + 8, len(b) - 7) if valid_header(b[k:k + 8])), None)
+                if j is None:
+                    break                   # espera o próximo frame p/ achar o fim
+                i = j
+                continue
+            L = (h[4] << 8) | h[5]
+            total = L if (h[6:8] == b"\x0b\x4a" and L == 0xa4) else 7 + L
+            if len(b) - i < total:
+                break                       # frame incompleto: espera
+            if h[1] != n:                   # frame de outra sessão (nuvem/app): repassa
+                out += b[i:i + total]
+            i += total
+        self.fwd_buf = b[i:]
+        return bytes(out)
+
     def proxy_c2u(self, conn, up):
-        """central -> nuvem: encaminha CRU e TAPeia (status/eventos/NACK) p/ o HA."""
+        """central -> nuvem: encaminha (menos a nossa sessão) e TAPeia p/ o HA."""
         while self.sock is conn:
             try:
                 data = conn.recv(4096)
@@ -306,7 +402,9 @@ class Relay:
                 break
             if up:
                 try:
-                    up.sendall(data)             # repassa p/ a nuvem (app segue vivo)
+                    fwd = self._c2u_filter(data)
+                    if fwd:
+                        up.sendall(fwd)          # repassa p/ a nuvem (app segue vivo)
                 except OSError:
                     print("[proxy] upstream (nuvem) caiu — controle local segue")
                     up = None
@@ -382,7 +480,7 @@ def start_web(relay, port):
         def do_POST(self):
             name = self.path.rsplit("/", 1)[-1]
             if name == "status":
-                relay.send(relay.SID, CMD_MAP["status"]); self._send(200, "ok", "text/plain")
+                relay.send(relay.my_sid, CMD_MAP["status"]); self._send(200, "ok", "text/plain")
             elif name in CMD_MAP:
                 relay.control(CMD_MAP[name]); self._send(200, "ok", "text/plain")
             else:
@@ -410,11 +508,13 @@ def main():
                     "IP da nuvem real (host[:porta]) — repassa tudo p/ a Intelbras (app segue "
                     "funcionando) e injeta comandos locais. Não testado; pode dar conflito.")
     ap.add_argument("--mqtt-name", default="Intelbras ELC 6012 NET", help="nome do dispositivo no HA")
+    ap.add_argument("--tz", default=os.environ.get("TZ", ""),
+                    help="fuso da hora enviada à central, ex.: America/Sao_Paulo (padrão: env TZ ou hora local)")
     ap.add_argument("--daemon", action="store_true",
                     help="sem terminal interativo (serviço/App do HA): não lê comandos do stdin")
     ns = ap.parse_args()
+    set_tz(ns.tz)
     if ns.mqtt_pass is None:
-        import os
         ns.mqtt_pass = os.environ.get("MQTT_PASSWORD")
     host, port = ns.listen.rsplit(":", 1)
     r = Relay()
@@ -428,7 +528,6 @@ def main():
     if ns.code:
         print("[i] --code é ignorado: a sessão de controle não usa o código (a central não autentica o servidor).")
     if ns.mqtt:
-        import os
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from mqtt_bridge import MqttBridge
         mh, _, mp = ns.mqtt.partition(":")
@@ -454,7 +553,7 @@ def main():
             with r.lock:
                 old, oldup = r.sock, r.up
                 r.sock = conn
-                r.buf = b""; r.tap_buf = b""
+                r.buf = b""; r.tap_buf = b""; r.fwd_buf = b""
                 r.session_opened = False
                 r._last_status_key = None
                 r._pending_cmd = None
@@ -487,7 +586,7 @@ def main():
         cmd = line.strip().lower()
         if cmd == "quit": break
         elif cmd == "status":
-            r.send(r.SID, CMD_MAP["status"])           # leitura: não precisa reabrir sessão
+            r.send(r.my_sid, CMD_MAP["status"])           # leitura: não precisa reabrir sessão
         elif cmd in CMD_MAP:                             # arme/desarme/choque: comando de controle
             r.control(CMD_MAP[cmd])
         elif cmd == "panic" or cmd.startswith("panic "):
@@ -509,7 +608,7 @@ def main():
                 print("uso: pgm <1|2> <on|off>")
         elif cmd == "events":
             for pg in range(8):
-                r.send(r.SID, bytes.fromhex("3900")+bytes([pg]))
+                r.send(r.my_sid, bytes.fromhex("3900")+bytes([pg]))
         elif cmd.startswith("bypass "):
             z = cmd.split()[1]  # 8 dígitos 0/1, ex.: bypass 00100000 (zona 3)
             if len(z) == 8 and set(z) <= {"0","1"}:
@@ -517,7 +616,7 @@ def main():
             else:
                 print("uso: bypass <8 dígitos 0/1>, ex.: bypass 00100000")
         elif cmd.startswith("raw "):
-            r.send(r.SID, bytes.fromhex(cmd[4:].replace(" ", "")))
+            r.send(r.my_sid, bytes.fromhex(cmd[4:].replace(" ", "")))
         elif cmd:
             print("comando desconhecido")
 

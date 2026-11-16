@@ -3,7 +3,7 @@ ARG BUILD_ARCH=amd64
 ARG BUILD_FROM=ghcr.io/home-assistant/${BUILD_ARCH}-base:3.23
 FROM ${BUILD_FROM}
 
-RUN apk add --no-cache python3 py3-pip \
+RUN apk add --no-cache python3 py3-pip tzdata \
     && pip3 install --no-cache-dir --break-system-packages "paho-mqtt>=2.1,<3"
 
 # Código do relay baixado da branch EXPERIMENTAL (modo proxy, não testado ao vivo).

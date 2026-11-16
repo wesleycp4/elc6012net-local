@@ -14,17 +14,21 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Item | Status | Observação |
 |---|---|---|
 | Registro da central (sem auth) | ✅ | MAC + modelo |
-| Sincronismo de hora (BCD) | ✅ | |
-| Status `0b 4a` (164 bytes) | ✅ | choque, alarme, zonas, bypass, relógio |
-| Arme/desarme/choque `40 1e` | ✅ | partições 1 / 2 / 255 |
-| Eventos `10 b2` | 🟡 | chega e é confirmado; faltam decodificar todos os códigos |
+| Sincronismo de hora (BCD) | ✅ | hora **local** (a nuvem manda Brasília); relay com `--tz` |
+| Portas / reconexão | ✅ | 9009; na falha alterna 9009 ⇄ 8080 a cada ~11 s e refaz o DNS |
+| Status `0b 4a` (164 bytes) | ✅ | choque, alarme, zonas, disparo, bypass, relógio, MAC `[157..162]` |
+| Bits de zona (aberta/disparo/bypass) | ✅ | byte 46/54/62 bit0 = zona 1 … bit7 = zona 8 (ao vivo) |
+| Arme/desarme/choque `40 1e` | ✅ | partições 1 / 2 / 255; armar o alarme não liga o choque |
+| Eventos `10 b2` | ✅ | Contact-ID decodificado (layout + códigos 407/409/130/120/122/422/306/410/412, PROTOCOL §4.7) |
 | Histórico `39 00` | ✅ | leitura por página; registro = Contact-ID + timestamp |
 | Manter sessão (`f0 f7`→`f0 fe`) | ✅ | central pinga `f0 f7`, servidor responde `f0 fe`; **`f0 f1` é DISCONNECT, nunca enviar** |
 | Registro `3f 94` | ✅ | MAC + modelo, sem auth |
-| Pânico `40 1a <tipo>` | ✅ | `01`=audível (confirmado), `00`=silencioso, `02`=fogo, `03`=médico (cross-val. bobaoapae) |
-| Acionar PGM `45 af` | ✅ | `45 af <pgm base-0> <estado>`; confirmado (PGM no modo app) |
+| Pânico `40 1a <tipo>` | ✅ | `00` silencioso e `01` audível (ao vivo, eventos 122/120); `02` fogo e `03` médico **recusados no ELC** (`0x21`) |
+| Acionar PGM `45 af` | ✅ | `45 af <pgm base-0> <estado>`; só no modo "acesso via app" (fora dele: `0x21`, confirmado ao vivo) |
 | Sinal Wi-Fi `[163]` (RSSI com sinal) | 🟡 | consistente, falta medição independente |
-| Bypass `40 1f` | ✅ | `40 1f ff <z1..z8>`, confirmado em captura |
+| Bypass `40 1f` | ✅ | `40 1f ff <z1..z8>`, confirmado ao vivo pelo relay (bitmap `[62..63]`) |
+| Desligar sirene `40 19` | 🟡 | aceito pela central; falta testar com a sirene tocando |
+| Resposta `f0 fd 00` | ✅ | é **ACK**, não recusa (recusa real: `0x21`, `0x3f`) |
 
 ## Configuração (blocos `3f 12` ler / `2f 12` gravar)
 | Bloco | Status | Observação |
@@ -36,8 +40,9 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | `02 c0` Wi-Fi (SSID+senha) | ✅ | texto claro |
 | **Trocar a rede Wi-Fi** (`2f 12 02 c0`) | 🟡 | gravação mapeada (SSID+senha); efeito via relay a testar |
 | `04 00` usuários (nomes/código) | ✅ | código em texto claro no bloco |
-| Opcodes extras (`38 5b`/`38 5c`/`0b 01`/`46 a0`/`46 10`/`00 60`) | 🟡 | observados (PROTOCOL §6); significado a confirmar |
-| `3f aa` pedir MAC | 🟡 | cross-val. bobaoapae (`GET_MAC`); sem teste dirigido |
+| Opcodes extras (`38 5b`/`38 5c`/`0b 01`/`46 a0`/`46 10`/`00 60`) | 🟡 | testados ao vivo: consultas/refresh, nenhum aciona nada (PROTOCOL §6) |
+| `3f aa` pedir MAC | ✅ | este firmware **não responde**; o MAC vem no status |
+| Endereço do servidor na config | ✅ | **não existe**: varredura de toda a memória (`3f 12`) sem `amt8000`/`intelbras` |
 | Parear sensor sem fio | ⬜ | **teste aberto** (precisa central desarmada) |
 
 ## Relay local
@@ -52,8 +57,10 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 | Reconexão (churn de WiFi) | ✅ reset de buf/sessão por conexão; threads atadas à conexão |
 | Detecção de recusa (NACK `f0 fd <code>`) | ✅ loga `[RECUSADO] code 0xNN` e reenvia (até 2x) |
 | Interface web (painel no relay) | ✅ **validado ao vivo**: via principal de controle (arme/desarme/choque) |
-| Bypass / PGM / pânico via relay | 🟡 implementados; faltam testes ao vivo |
-| Integração MQTT → Home Assistant local | 🟡 implementada (`relay/mqtt_bridge.py`, MQTT Discovery); falta validar ao vivo |
+| Bypass / PGM / pânico via relay | ✅ **validado ao vivo** (PGM só no modo app) |
+| Confirmação de comando | ✅ `f0 fd 00` tratado como ACK; `40 1e` conferido no status e reenviado se não mudou |
+| Integração MQTT → Home Assistant local | ✅ **validado ao vivo**: entidades criadas; arme/desarme e cerca pelo HA |
+| Modo híbrido/proxy (`experimental`) | 🟡 túnel e injeção local funcionam; o app oficial **não entrou** no teste (ver abaixo) |
 
 ---
 
@@ -64,8 +71,14 @@ Com a central conectada a um gateway sob seu controle (ver
 faça a ação pelo app **anotando a hora** e mande a captura decodificada
 (`tools/decode_capture.py`, que já mascara segredos).
 
-1. ~~Bypass `40 1f`~~ ✅ confirmado.
-2. ~~Validar o relay local (arme/desarme/choque sem nuvem)~~ ✅ **confirmado ao vivo**.
+1. **Modo híbrido** (branch `experimental`) — no teste de 16/11 o túnel funcionou
+   (registro, hora e keepalive da nuvem passaram; comando local na sessão 2 sem
+   derrubar a nuvem), mas o app oficial não entrou em ~3 min. A versão atual não
+   repassa mais à nuvem as respostas da sessão injetada. Falta: rodar mais tempo,
+   capturar **também o lado da nuvem** (interface de saída) e anotar a hora em que
+   o app tenta entrar.
+2. **Sirene `40 19`** — com o alarme disparado e a sirene ligada.
 3. **PGM temporizada** — mude os segundos de uma PGM (0 → N → 0).
 4. **Parear sensor sem fio** — com a central **desarmada**, cadastre um sensor.
-5. **Bypass / PGM / pânico via relay** — confirme o efeito físico pelo relay.
+5. **Códigos 🟡 de evento** (409, 422, 306, 410/412) — acione a função anotando a
+   hora e confira o evento `10 b2`.

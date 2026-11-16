@@ -30,12 +30,29 @@ def mask_digits(s):
 OPCODES = {
     "3faa": "pedir MAC (GET_MAC)", "385b": "consulta 38 5b", "385c": "consulta 38 5c",
     "0b01": "consulta status curta 0b 01", "0060": "consulta 00 60",
-    "46a0": "comando por particao 46 a0", "4610": "comando por particao 46 10",
+    "46a0": "consulta por particao 46 a0", "4610": "consulta/refresh 46 10",
     "4019": "desligar sirene (40 19)", "3900": "historico de eventos (39 00)",
     "3f94": "REGISTRO da central", "f080": "sincronismo de hora",
     # keepalive/ack (f0fe/f0fd/f0f7/f0f1) ficam de fora de propósito: são muito
     # frequentes e floodariam a saída.
 }
+CID = {"407": "arme/desarme remoto", "409": "arme/desarme controle remoto",
+       "130": "disparo de zona", "120": "panico audivel", "122": "panico silencioso",
+       "422": "PGM", "306": "programacao alterada", "410": "acesso remoto",
+       "412": "download/acesso"}
+
+def contact_id(b: bytes) -> str:
+    """Evento 10 b2 (PROTOCOL §4.7): qualificador + código Contact-ID (0 = 0x0a),
+    partição, zona/usuário e data/hora do evento."""
+    if len(b) < 22:
+        return f"ev={b.hex()}"
+    q = {1: "E", 3: "R"}.get(b[7], f"?{b[7]:02x}")
+    code = "".join(str(0 if x == 0x0a else x) for x in b[8:11])
+    part = int.from_bytes(b[11:13], "big"); zu = int.from_bytes(b[13:16], "big")
+    t = b[16:22]
+    return (f"{q} {code} ({CID.get(code, '?')}) part={part} zona/usuario={zu} "
+            f"em {t[0]:02d}/{t[1]:02d}/{t[2]:02d} {t[3]:02d}:{t[4]:02d}:{t[5]:02d}")
+
 ZONE_ATTR = [(0x01,"habilitada"),(0x02,"inteligente"),(0x04,"temporizada"),
              (0x10,"silenciosa"),(0x20,"parcial"),(0x40,"24h")]
 
@@ -99,7 +116,7 @@ def decode(path, port):
         elif cmd == "401f":
             note = f"BYPASS (40 1f) dados={body.hex(' ')}"
         elif cmd == "10b2":
-            note = f"EVENTO ev={body[6:16].hex()} (contact-id)"
+            note = f"EVENTO {contact_id(body)}"
         elif cmd == "f0f0" and len(body) >= 1:
             note = "ABERTURA DE SESSAO (f0 f0)  <codigo mascarado>"
         elif cmd == "401a" and len(pl) >= 9:

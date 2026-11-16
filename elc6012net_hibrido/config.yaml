@@ -1,5 +1,5 @@
 name: ELC 6012 NET Híbrido (experimental)
-version: "0.1.0"
+version: "0.1.1"
 slug: elc6012net_hibrido
 description: "[EXPERIMENTAL] Proxy: mantém a nuvem/app Intelbras funcionando e injeta comandos locais pelo Home Assistant"
 url: https://github.com/wesleycp4/elc6012net-local

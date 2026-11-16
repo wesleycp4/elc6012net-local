@@ -13,8 +13,9 @@ Para controle no HA **agora**, use o add-on MQTT (depende da nuvem Intelbras):
 Substituir o relay da Intelbras por um **relay local** (`relay/elc_local_relay.py`):
 a central conecta nele e passa a ser controlada 100% localmente. **O controle
 (arme/desarme/choque/tudo) já está confirmado ao vivo** pelo painel web/stdin do
-relay (ver [STATUS](STATUS.md)). A ponte local para o Home Assistant via MQTT já
-está implementada (`relay/mqtt_bridge.py`) — falta só validar ao vivo.
+relay (ver [STATUS](STATUS.md)). A ponte local para o Home Assistant via MQTT
+(`relay/mqtt_bridge.py`) foi **validada ao vivo** em 16/11/2026: entidades criadas,
+arme/desarme e cerca comandados pelo HA.
 
 ### Integração local via MQTT Discovery (pronta)
 O relay traz uma ponte MQTT (`relay/mqtt_bridge.py`) que cria as entidades no HA
@@ -30,8 +31,9 @@ Loja → ⋮ → Repositórios*, adicione `https://github.com/wesleycp4/elc6012n
 e instale um dos dois (só um por vez, ambos usam a porta 9009):
 
 - **ELC 6012 NET Local** — modo validado, sem nuvem (código da `main`).
-- **ELC 6012 NET Híbrido (experimental)** — mantém a nuvem/app Intelbras e injeta
-  comandos locais (código da `experimental`, não testado ao vivo).
+- **ELC 6012 NET Híbrido (experimental)** — tenta manter a nuvem/app Intelbras e
+  injetar comandos locais (código da `experimental`; no teste ao vivo o app oficial
+  não entrou).
 
 As credenciais do Mosquitto vêm sozinhas. Cada App tem a aba *Documentação* com o
 redirecionamento de DNS necessário (`amt8000.intelbras.com.br → IP do HA`) —
@@ -50,9 +52,9 @@ obrigatório nos dois Apps; ver [redirecionamento.md](redirecionamento.md).
    Se a internet cair, continua tudo funcionando — a central fala com o relay e o
    relay com o HA, tudo na sua LAN.
 
-A disponibilidade segue a central (online/offline via LWT). O mapeamento dos bits
-de zona (`zona_1..8`) é o melhor palpite atual — confira qual zona física acende
-cada sensor e ajuste se precisar.
+A disponibilidade segue a central (online/offline via LWT). As zonas `zona_1..8`
+seguem a numeração da central (bits confirmados ao vivo); os nomes de cada zona
+estão no bloco de config `00 00` — renomeie as entidades no HA conforme eles.
 
 ### Alternativa sem MQTT (stopgap)
 Sem broker, dá pra usar as integrações nativas do HA apontando pro relay:
@@ -60,5 +62,5 @@ Sem broker, dá pra usar as integrações nativas do HA apontando pro relay:
 (porém com polling e sem descoberta automática).
 
 ### A evoluir no relay (contribuições)
-Zonas/bypass por bit confirmados, publicação dos eventos `10 b2` como entidade
-`event`, e `switch.bypass_zona_1..8`.
+Publicar os eventos `10 b2` (Contact-ID, já decodificados em PROTOCOL §4.7) como
+entidade `event`, `switch.bypass_zona_1..8` e nomes das zonas lidos da central.

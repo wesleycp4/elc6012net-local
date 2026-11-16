@@ -33,18 +33,20 @@ via nuvem). Opções, como testar e gargalos:
 - ✅ **Controle local confirmado ao vivo, sem nuvem**: a central conecta no relay e
   responde a arme/desarme, choque e "tudo ligado/desligado" — validado fisicamente.
 - ✅ **Protocolo de controle** mapeado (registro, abertura de sessão `f0 f0`, status
-  de 164 bytes, `40 1e`, eventos, pânico, PGM) — ver [PROTOCOL.md](PROTOCOL.md).
+  de 164 bytes, `40 1e`, bypass, pânico, PGM, eventos Contact-ID decodificados) —
+  ver [PROTOCOL.md](PROTOCOL.md).
 - ✅ **Protocolo de configuração** mapeado (zonas + atributos, nome, pulsos falhos,
   PGMs, usuários, Wi-Fi) — leitura/escrita de blocos de memória.
 - ✅ **Relay local** (`relay/elc_local_relay.py`): enquadramento com re-sincronização,
   sessão de controle, status ao vivo, painel web e retry automático na recusa.
-- ✅ **Integração Home Assistant local** via MQTT Discovery (`relay/mqtt_bridge.py`):
-  cria as entidades sozinho, controla sem nuvem/internet — ver [docs/homeassistant.md](docs/homeassistant.md).
+- ✅ **Integração Home Assistant local** via MQTT Discovery (`relay/mqtt_bridge.py`),
+  **validada ao vivo** (arme/desarme e cerca pelo HA, zonas 1–8 com bits
+  confirmados) — ver [docs/homeassistant.md](docs/homeassistant.md).
   Também empacotado como **App do Home Assistant**: adicione este repositório na
   loja de Apps e instale o **ELC 6012 NET Local** (o **Híbrido** é experimental).
-- 🟡 Bypass e PGM via relay (implementados, faltam testes), PGM temporizada,
-  mapeamento de bits de zona.
-- ⬜ Pareamento de sensor sem fio; opcodes extras (PROTOCOL §6).
+- 🟡 Modo **híbrido** (manter o app Intelbras junto): túnel e comando local
+  funcionam, mas o app oficial não entrou no teste — segue na `experimental`.
+- ⬜ Pareamento de sensor sem fio, PGM temporizada, sirene `40 19` com alarme tocando.
 
 Mapa completo e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
 
@@ -67,8 +69,8 @@ Mapa completo e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
    `tools/setup_ap.sh` cria uma rede só para a central.
 2. Rode o relay e abra o painel:
    ```bash
-   python3 relay/elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --web 8080
-   # painel: http://127.0.0.1:8080  (aciona a cerca — só local)
+   python3 relay/elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --web 8088 --tz America/Sao_Paulo
+   # painel: http://127.0.0.1:8088  (aciona a cerca — só local)
    ```
 3. Controle pelo painel web (arme/desarme/choque) ou pelo stdin
    (`shockon`, `arm`, `allon`…). O status aparece ao vivo conforme a central muda.

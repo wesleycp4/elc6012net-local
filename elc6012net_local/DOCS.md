@@ -31,8 +31,9 @@ https://github.com/wesleycp4/elc6012net-local
   **indisponível** e volta sozinho quando reconectar.
 - **O app oficial da Intelbras para de funcionar** neste modo (a central não fala
   mais com a nuvem). Para manter o app/avisos da Intelbras, veja o App Híbrido.
-- As zonas seguem o bit do status (a do sensor da porta da cozinha apareceu como
-  zona 5). Renomeie as entidades conforme a sua fiação.
+- As zonas 1–8 seguem a numeração da central (confirmado ao vivo). Renomeie as
+  entidades com os nomes de zona que você usa no app Intelbras.
+- A hora enviada à central usa o fuso do Home Assistant.
 
 ## Opções
 

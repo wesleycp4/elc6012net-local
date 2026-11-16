@@ -1,5 +1,5 @@
 name: ELC 6012 NET Local
-version: "1.0.0"
+version: "1.0.1"
 slug: elc6012net_local
 description: Controle 100% local (sem nuvem) do eletrificador Intelbras ELC 6012 NET, com Home Assistant via MQTT
 url: https://github.com/wesleycp4/elc6012net-local
