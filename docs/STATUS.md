@@ -77,8 +77,11 @@ faça a ação pelo app **anotando a hora** e mande a captura decodificada
    repassa mais à nuvem as respostas da sessão injetada. Falta: rodar mais tempo,
    capturar **também o lado da nuvem** (interface de saída) e anotar a hora em que
    o app tenta entrar.
+   Atenção: a nuvem dá um índice de sessão por cliente (ponte de nuvem do HA = 1,
+   app do celular = 2…), e a injeção usa a 2 por padrão — com mais de um cliente
+   ligado, use um índice livre (`--inject-session`, na `experimental`).
 2. **Sirene `40 19`** — com o alarme disparado e a sirene ligada.
 3. **PGM temporizada** — mude os segundos de uma PGM (0 → N → 0).
 4. **Parear sensor sem fio** — com a central **desarmada**, cadastre um sensor.
-5. **Códigos 🟡 de evento** (409, 422, 306, 410/412) — acione a função anotando a
+5. **Códigos de evento em aberto** (306, 412) — acione a função anotando a
    hora e confira o evento `10 b2`.

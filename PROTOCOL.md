@@ -53,7 +53,10 @@ total = 7 + tam     checksum = XOR(todos os bytes anteriores) ^ 0xFF
 
 - `sessão` = **índice da sessão de app**, não um contador por mensagem. ✅ Vale
   `00 00 00 00` na conexão base (registro, hora, tiques `f0 fe`) e `00 00 00 0N`
-  durante a sessão de app N (N=1 na 1ª sessão; vira 02, 03… se a sessão reabrir).
+  durante a sessão de app N. A nuvem dá **um índice por cliente conectado**: nas
+  capturas com a ponte de nuvem do HA e o app do celular ao mesmo tempo, um ficou
+  na sessão 1 (poll a cada ~10 s) e o outro na 2 (abriu com `f0 f0 01 <senha>`,
+  leu `02 b0`/`03 e0`), em paralelo.
   Dentro de uma sessão o índice é **fixo**: `f0 f0`, `0b 4a`, `40 1e`, `f0 f1`
   todos usam o mesmo `00 00 00 0N`. A central ecoa com os dois primeiros bytes
   trocados (`00 00 00 01` do relay ⇄ `00 01 00 00` da central).
@@ -222,13 +225,17 @@ Códigos vistos (todas as capturas):
 | Código | Significado | Confiança |
 |---|---|---|
 | 3 407 / 1 407 | arme / desarme remoto (app, nuvem ou relay); partição 1 alarme, 2 choque | ✅ |
-| 3 409 / 1 409 | arme / desarme pelo controle remoto (usuário 0) | 🟡 |
+| 3 409 / 1 409 | arme / desarme pelo controle remoto RF (usuário 0) | ✅ |
 | 1 130 / 3 130 | disparo / restauração de zona (zona em `[13..15]`) | ✅ |
 | 1 120 | pânico audível | ✅ |
 | 1 122 | pânico silencioso | ✅ |
-| 3 422 / 1 422 | acionamento de PGM (partição/zona = nº da PGM) | 🟡 |
+| 1 422 / 3 422 | PGM ligada / desligada (partição e zona = nº da PGM) | ✅ |
 | 1 306 | programação alterada (após gravar config) | 🟡 |
-| 1 410 / 3 412 | acesso remoto / download (aparecem ao conectar o app) | 🟡 |
+| 1 410 | **fim de sessão remota**: sai ~2 s depois de cada `f0 f1` (app ou relay) | ✅ |
+| 3 412 | visto uma vez durante comandos do app; significado em aberto | ⬜ |
+
+O qualificador segue o sentido do Contact-ID: no arme `3` = armou e `1` = desarmou;
+na zona `1` = disparou e `3` = restaurou; na PGM `1` = ligou e `3` = desligou.
 
 ### 4.8 Recusa de comando — `f0 fd <código>`  ✅
 Quando a central **recusa** um comando (`40 1e`, `40 1f`, `45 af`, `40 1a`) ela
