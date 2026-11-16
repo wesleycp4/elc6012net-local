@@ -39,36 +39,51 @@ Mantém todo o firmware original (inclusive a conversa com a placa base); só mu
 onde o módulo conecta. Como o ESP8266 não tem secure boot nem flash encryption, a
 imagem alterada é aceita.
 
-1. **Backup primeiro.** O módulo é encaixado (header) na placa base — removê-lo e
-   ler **na bancada** é o jeito mais limpo e seguro (longe da alta tensão do
-   energizador). Antes de tirar: fotografe os dois lados e **marque a orientação**
-   (pino 1) para recolocar igual.
+1. **Backup primeiro.** A placa Intelbras ("WiFi Connect", módulo ESP-WROOM-02D)
+   tem um botão **PROGRAMAR** (= `IO0`) e já faz o strapping de `EN`/`IO15`/`IO0`.
+   **Mantendo o módulo na placa**, basta soldar 4 fios nos pads do módulo e usar o
+   botão — não precisa mexer em `EN`/`IO15`/`IO2`.
 
-   Use um adaptador **USB-TTL de lógica 3,3 V** (se tiver jumper 5V/3,3V, deixe em
-   3,3 V e confira no multímetro). **Alimentação é o erro nº 1:** o pino 3V3 do
-   adaptador costuma ser fraco demais (o ESP8266 puxa picos de ~350–500 mA) — use uma
-   fonte 3,3 V separada de **≥500 mA**, com **GND comum**, e um capacitor 10 µF +
-   100 nF perto do módulo. Confira os nomes na **serigrafia do módulo**, não a posição:
+   Pinos do ESP-WROOM-02D (vista de cima, antena no topo; esquerda 1→9 de cima p/
+   baixo, direita 10→18 de baixo p/ cima — datasheet Espressif, seção 2):
 
-   | Pad do módulo | Liga em |
-   |---|---|
-   | `3V3` | 3,3 V da fonte |
-   | `GND` | GND (comum: fonte + adaptador) |
-   | `EN` (CH_PD) | 3,3 V (10k) |
-   | `IO15` | GND (10k) |
-   | `IO0` | GND → modo de gravação/leitura |
-   | `IO2` | solto, ou 3,3 V por 10k |
-   | `TXD` | **RX** do adaptador |
-   | `RXD` | **TX** do adaptador |
+   ```
+               [ ANTENA / topo ]
+      3V3  1 ┤□                □├ 18  GND
+      EN   2 ┤□                □├ 17  IO16
+      IO14 3 ┤□                □├ 16  TOUT
+      IO12 4 ┤□                □├ 15  RST
+      IO13 5 ┤□    (19 GND)    □├ 14  IO5
+      IO15 6 ┤□                □├ 13  GND
+      IO2  7 ┤□                □├ 12  TXD → RX do adaptador
+      IO0  8 ┤□                □├ 11  RXD → TX do adaptador
+      GND  9 ┤□                □├ 10  IO4
+   ```
 
-   (TX do módulo cruza no RX do adaptador e vice-versa.)
+   | Pad | Função | Liga em |
+   |---|---|---|
+   | 1 (topo esq.) | `3V3` | 3,3 V da fonte |
+   | 9 (base esq.) | `GND` | GND comum (fonte + adaptador) |
+   | 12 (dir., 3º de baixo) | `TXD` | **RX** do adaptador |
+   | 11 (dir., 2º de baixo) | `RXD` | **TX** do adaptador |
+
+   Alimentação: use fonte 3,3 V de **≥500 mA** (o datasheet exige isso), **não** o
+   pino 3V3 do adaptador; GND comum; adaptador em **lógica 3,3 V**. O módulo é `-N2`
+   = flash de **2 MB**.
+
+   **Modo download:** segure **PROGRAMAR** (`IO0` em nível baixo) e **ligue a
+   alimentação** com ele pressionado. A placa não tem auto-reset (DTR/RTS), então:
    ```bash
    pip install esptool
-   esptool --port COM? flash_id                     # confirma o chip e o tamanho
-   esptool --port COM? read_flash 0 0x200000 dump.bin   # 0x200000=2MB; ajuste ao flash_id
+   esptool --port COM? --before no_reset --after no_reset flash_id
+   esptool --port COM? --before no_reset --after no_reset read_flash 0 0x200000 dump.bin
    ```
-   Leia **duas vezes** e compare os arquivos; se baterem, o backup é confiável.
-   Para voltar a usar o módulo, tire `IO0` do GND e religue (ou só recoloque na placa).
+   Se der "Failed to connect", repita a sequência; persistindo, **inverta TXD/RXD**
+   (seguro). Leia **duas vezes** e compare — se baterem, o backup é confiável.
+
+   > **Módulo removido da placa (bare):** aí você mesmo faz o strapping — `EN`→3V3,
+   > `IO15`→GND, `IO2`→3V3/solto, `IO0`→GND no boot (modo download) — além de
+   > `3V3`/`GND`/`TXD`/`RXD`. Mantendo na placa, ignore esses.
 2. **Ache a string** `amt8000.intelbras.com.br` (e veja se há `amt.intelbras.com.br`):
    ```bash
    grep -abo "amt8000.intelbras.com.br" dump.bin
