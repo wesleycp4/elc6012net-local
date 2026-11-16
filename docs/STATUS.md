@@ -8,7 +8,11 @@ ELC 6012 NET, pode rodar os testes abertos e mandar a captura (veja
 > A `experimental` fica à frente com trabalho ainda não testado ao vivo
 > (ex.: modo proxy/híbrido com a nuvem), antes de mesclar.
 
-Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
+Legenda:
+- ✅ **confirmado** — por captura e/ou validado ao vivo (a coluna Observação diz qual).
+- 🟡 **parcial / não testado por nós** — estrutura mapeada por captura, mas o efeito
+  não foi exercido/validado (ex.: gravação de config, sirene com alarme tocando).
+- ⬜ **aberto** — sem dados; precisa de teste.
 
 ## Controle / monitoração
 | Item | Status | Observação |
@@ -64,12 +68,12 @@ Legenda: ✅ confirmado · 🟡 parcial · ⬜ aberto (precisa de teste)
 
 ---
 
-## Testes abertos (como ajudar)
+## Pendências e testes abertos (não testado)
 
-Com a central conectada a um gateway sob seu controle (ver
-[`tools/setup_ap.sh`](../tools/setup_ap.sh)) e `tcpdump` capturando a porta 9009,
-faça a ação pelo app **anotando a hora** e mande a captura decodificada
-(`tools/decode_capture.py`, que já mascara segredos).
+Nada abaixo foi validado ao vivo por nós — são os próximos passos. Com a central
+conectada a um gateway sob seu controle (ver [`tools/setup_ap.sh`](../tools/setup_ap.sh))
+e `tcpdump` capturando a porta 9009, faça a ação pelo app **anotando a hora** e
+mande a captura decodificada (`tools/decode_capture.py`, que já mascara segredos).
 
 1. **Modo híbrido** (branch `experimental`) — no teste de 16/11 o túnel funcionou
    (registro, hora e keepalive da nuvem passaram; comando local na sessão 2 sem
@@ -83,10 +87,13 @@ faça a ação pelo app **anotando a hora** e mande a captura decodificada
 2. **Sirene `40 19`** — com o alarme disparado e a sirene ligada.
 3. **PGM temporizada** — mude os segundos de uma PGM (0 → N → 0).
 4. **Parear sensor sem fio** — com a central **desarmada**, cadastre um sensor.
-5. **Código de evento em aberto** (412) — acione a função anotando a
+5. **Gravação de config pelo relay** (`2f 12`) — a estrutura está mapeada por captura
+   (o app grava), mas nunca escrevemos via relay. Testar algo reversível primeiro
+   (ex.: renomear uma zona `00 00`) antes de blocos sensíveis como Wi-Fi (`02 c0`).
+6. **Código de evento em aberto** (412) — acione a função anotando a
    hora e confira o evento `10 b2`.
-6. **Dump da flash do ESP8266** (avançado, com a central aberta) — ler a flash do
+7. **Dump da flash do ESP8266** (avançado, com a central aberta) — ler a flash do
    módulo com `esptool`, achar `amt8000.intelbras.com.br` e testar mover a string
    para um endereço local (elimina o redirecionamento de DNS). Ver [firmware.md](firmware.md).
-7. **Mapear a serial ESP↔placa base** (avançado) — grampear TX/RX entre o módulo e o
+8. **Mapear a serial ESP↔placa base** (avançado) — grampear TX/RX entre o módulo e o
    MCU do eletrificador. É o que trava um firmware próprio (ESPHome). Ver [firmware.md](firmware.md).
