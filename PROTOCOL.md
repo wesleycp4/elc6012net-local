@@ -230,7 +230,7 @@ Códigos vistos (todas as capturas):
 | 1 120 | pânico audível | ✅ |
 | 1 122 | pânico silencioso | ✅ |
 | 1 422 / 3 422 | PGM ligada / desligada (partição e zona = nº da PGM) | ✅ |
-| 1 306 | programação alterada (após gravar config) | 🟡 |
+| 1 306 | programação alterada (após gravar config; visto ao trocar o Wi-Fi pelo app — a ponte de nuvem do HA também rotula assim) | ✅ |
 | 1 410 | **fim de sessão remota**: sai ~2 s depois de cada `f0 f1` (app ou relay) | ✅ |
 | 3 412 | visto uma vez durante comandos do app; significado em aberto | ⬜ |
 
