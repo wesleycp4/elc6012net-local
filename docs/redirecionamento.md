@@ -9,11 +9,14 @@ usar o controle local; nesse caso, a opção é a integração via nuvem (ver
 ## Por que precisa redirecionar
 
 A central tem o servidor **fixo no firmware**: ela resolve
-`amt8000.intelbras.com.br` pelo DNS que recebe do DHCP e conecta na porta **9009**.
-Não há onde trocar esse endereço:
+`amt8000.intelbras.com.br` pelo DNS que recebe do DHCP e conecta na porta **9009**
+(se falhar, alterna com a **8080** a cada ~11 s). Não há onde trocar esse endereço:
 
 - Nas capturas, o nome do servidor aparece **só nas consultas DNS** da central —
-  nunca dentro do protocolo 9009 nem nos blocos de configuração.
+  nunca dentro do protocolo nem nos blocos de configuração.
+- Uma varredura de **toda** a memória de configuração da central (leitura `3f 12`)
+  não achou `amt8000`, `intelbras`, `.com`, `9009` nem `8080` — não existe gravação
+  que troque o servidor.
 - O bloco de Wi-Fi (`02 c0`, 96 bytes) tem só **SSID (32 B) + senha (64 B)**, sem
   campos de IP, gateway ou DNS — a central sempre usa DHCP.
 - O app Guardian/AMT não tem opção de servidor.
@@ -33,7 +36,7 @@ apontar para a máquina do relay.
 | 1 | Registro de DNS local no roteador | roteador com "DNS estático"/"host override" | não (só esse nome) |
 | 2 | AdGuard Home / Pi-hole no HA | roteador que deixa trocar o DNS do DHCP | **sim** (todo o DNS passa pelo HA) |
 | 3 | Rede só para a central | um 2º roteador/AP (OpenWrt, Raspberry Pi, PC) | não |
-| 4 | DNAT pelo IP da nuvem | roteador com regras de NAT avançadas | não |
+| 4 | DNAT pelo IP da central | roteador com regras de NAT avançadas | não |
 
 ### 1. Registro de DNS no roteador (melhor, se existir)
 
@@ -82,18 +85,24 @@ ligado na sua rede de casa. A central entra no Wi-Fi dele e o DNS dele aponta
   (ou pelo comando de Wi-Fi do [PROTOCOL.md §5](../PROTOCOL.md)).
 - Desvantagem: mais um equipamento ligado o tempo todo.
 
-### 4. DNAT pelo IP da nuvem
+### 4. DNAT pela origem (o IP da central)
 
-Em roteadores com NAT avançado (OpenWrt, MikroTik, pfSense), redirecione o tráfego
-da central para o IP da nuvem, porta 9009, para o relay:
+Em roteadores com NAT avançado (OpenWrt, MikroTik, pfSense), mande **todo** o
+tráfego TCP da central nas portas 9009 e 8080 para o relay — sem depender do DNS
+nem do IP da nuvem (foi o que o laboratório usou):
 
 ```
-destino 52.67.212.35:9009 (TCP)  →  <IP do HA>:9009
+origem <IP da central> → TCP 9009/8080 (qualquer destino)  →  <IP do relay>:9009
+# nftables:
+nft add rule ip nat prerouting ip saddr <IP da central> tcp dport { 8080, 9009 } \
+    ip daddr != <IP do relay> dnat to <IP do relay>:9009
 ```
 
-Não precisa de DNS, mas é **frágil**: se a Intelbras mudar o IP, para de
-funcionar. O "redirecionamento de porta" comum dos roteadores (internet → LAN)
-**não serve** para isso. Bom como reforço da opção 1/3.
+Precisa de **IP fixo para a central** (reserva no DHCP). Para valer na hora, derrube
+a conexão atual (religar a central ou `conntrack -D -s <IP da central>`). Não serve
+o "redirecionamento de porta" comum dos roteadores (internet → LAN).
+Alternativa mais frágil: DNAT pelo destino `52.67.212.35` — quebra se a Intelbras
+mudar o IP.
 
 ## Como saber o que o seu roteador permite
 
@@ -109,9 +118,14 @@ funcionar. O "redirecionamento de porta" comum dos roteadores (internet → LAN)
 nslookup amt8000.intelbras.com.br
 ```
 
-Depois **desligue e religue a central** (ela guarda o IP resolvido) e veja no log
-do relay/App: `[+] central conectou` e `[SESSAO] aberta`. Para desfazer, remova a
-regra e religue a central: ela volta para a nuvem.
+A central refaz a consulta DNS **a cada reconexão**, mas fica na conexão aberta
+enquanto ela durar — então **desligue e religue a central** para valer na hora. No
+log do relay/App deve aparecer `central conectou` e `[SESSAO] aberta`. Para
+desfazer, remova a regra e religue a central: ela volta para a nuvem.
+
+Com DNS apontando para o HA, quando a 9009 falha a central tenta a **8080 do HA**.
+Se outro serviço seu escuta na 8080 do HA, ela pode se prender nele até a próxima
+tentativa na 9009 — prefira deixar a 8080 do HA livre.
 
 ## Gargalos e limitações
 
@@ -120,10 +134,12 @@ regra e religue a central: ela volta para a nuvem.
 | **Redirecionamento obrigatório** | Sem controle de DNS/rede, não há modo local (nem Híbrido). |
 | **Relay/HA é ponto único** | HA fora do ar → central sem servidor: sem controle remoto e (no Local) sem nuvem. O controle físico/controle remoto da central continua funcionando. |
 | **DNS da casa no HA** (opção 2) | HA fora do ar derruba o DNS de toda a casa. |
-| **Cache de DNS da central** | Mudanças só valem após religar a central. |
+| **Conexão já aberta** | Mudanças de DNS/regra só valem na próxima reconexão (religue a central). |
+| **Porta 8080** | Na falha da 9009 a central tenta a 8080: o DNAT deve cobrir as duas. |
 | **Modo Local sem app Intelbras** | Sem app oficial e sem notificações da nuvem enquanto estiver no relay. |
-| **Modo Híbrido não testado** | Pode haver instabilidade na sessão da nuvem; usa o IP fixo `52.67.212.35`. |
-| **IP da nuvem pode mudar** | Quebra a opção 4 e o `upstream` do Híbrido (atualizar à mão). |
+| **Modo Híbrido incompleto** | No teste ao vivo o túnel funcionou, mas o app oficial não entrou; usa o IP fixo `52.67.212.35`. |
+| **IP da nuvem pode mudar** | Quebra o DNAT pelo destino e o `upstream` do Híbrido (atualizar à mão). |
+| **Fuso do relay** | O relay manda a hora para a central; em máquina UTC use `--tz America/Sao_Paulo` (o App já usa o fuso do HA). |
 | **Uma conexão por vez** | Só um relay/App na porta 9009. |
 | **Sem autenticação** | A porta 9009, o painel web e os tópicos MQTT não pedem senha além do broker: mantenha tudo **só na LAN**, nunca exponha à internet. |
 | **Firmware novo** | Uma atualização da Intelbras pode mudar o servidor, o protocolo ou adicionar TLS e quebrar o modo local. |

@@ -18,15 +18,22 @@ papel do relay, ao qual a central se conecta (ver [`relay/`](relay/)).
 A central mantém uma conexão TCP **de saída, permanente**, com o relay. O app
 (ou um cliente) conecta no mesmo relay e é roteado até a central pelo MAC. Na LAN
 a central só responde a sondas de descoberta na porta 9009 (segundo o projeto
-rhacius); **todo o controle passa pelo relay**. Dois servidores (porta 9009):
+rhacius); **todo o controle passa pelo relay**. Dois servidores:
 
 1. `amt.intelbras.com.br` — servidor "geral" (informa em qual relay o painel está)
 2. `amt8000.intelbras.com.br` — relay onde a sessão acontece (ex.: `52.67.212.35`)
 
-O nome `amt8000.intelbras.com.br` é **fixo no firmware**: nas capturas ele só
-aparece nas consultas DNS da central, nunca no protocolo nem nos blocos de config —
-não há comando conhecido para trocá-lo. Para usar um relay local é preciso
+O nome `amt8000.intelbras.com.br` é **fixo no firmware** ✅: nas capturas ele só
+aparece nas consultas DNS da central, e uma varredura de **toda** a memória de
+config (`3f 12`, 0x0000–0xfff0) não achou `amt8000`, `intelbras`, `.com`, `9009`
+nem `8080`. Não há comando para trocá-lo; para usar um relay local é preciso
 redirecioná-lo na rede (ver [docs/redirecionamento.md](docs/redirecionamento.md)).
+
+**Portas e reconexão** ✅ (captura do laboratório): a central conecta na porta
+**9009**; se a conexão falhar ou cair, ela **alterna entre 9009 e 8080** a cada
+~11 s (a nuvem atende nas duas) e **refaz a consulta DNS** a cada ciclo de
+reconexão. Um relay/DNAT deve cobrir as duas portas (ou só a 9009, aceitando que a
+central leve uma tentativa a mais para achá-lo).
 
 **Nenhuma autenticação do servidor.** ✅ (a *sessão de app* tem sua própria abertura, §3.4) A central se registra mandando só o MAC +
 modelo; o relay responde `f0 fe` (ok) e segue. Não há TLS, nem token, nem desafio
@@ -84,6 +91,12 @@ Ordem observada ao conectar (✅):
 2. **`f0 f7`** (central) → `f0 fe` (relay).
 3. **Hora** (central pede `f0 80 03`) → relay responde
    `f0 80 <AA MM DD DS hh mm ss>` em **BCD** (DS = dia da semana) (ex.: `26 11 13 06 08 18 04`). ✅
+   A nuvem manda a **hora local** (Brasília). Um relay numa máquina em UTC deixa a
+   central 3 h adiantada — e os eventos/histórico com hora errada (visto no
+   laboratório); o relay tem `--tz` para isso. A central confirma com `f0 fd 00`
+   (sessão `00 00 00 00`). Logo após reconectar ela às vezes repete o pedido de
+   hora a cada ~5 s por alguns minutos (com o relógio zerado); responder sempre
+   resolve. 🟡
 4. **Abertura de sessão de controle** (`f0 f0`) ✅ — antes de pedir status ou mandar
    comando, o relay abre a sessão na sessão `00 00 00 0N` enviando o payload **fixo**
    `f0 f0 03 03 06 05 09 00 00 00 01` (o `03 03 06 05 09` é constante em todas as
@@ -123,10 +136,12 @@ Offsets confirmados (0-based, a partir do byte 0 do frame):
 | `[8]` | modelo (`0x35` = ELC 6012 NET) |
 | `[30]` bit0 | choque ligado |
 | `[31]` bit0 | alarme armado |
-| `[46..47]` | zonas abertas (bitmap) |
-| `[54..55]` | zonas disparadas (bitmap) |
-| `[62..63]` | zonas em bypass (bitmap) |
-| `[72..77]` | relógio: dia mês ano hh mm ss (hex) |
+| `[46..47]` | zonas abertas (bitmap): byte 46 bit0 = zona 1 … bit7 = zona 8 ✅ (ao vivo, 4 sensores) |
+| `[54..55]` | zonas disparadas (bitmap, mesma ordem) ✅ (disparo da zona 3 = `04 00`) |
+| `[62..63]` | zonas em bypass (bitmap, mesma ordem) ✅ |
+| `[72..77]` | relógio: dia mês ano hh mm ss (**binário**, ex.: `10 0b 1a` = 16/11/26) |
+| `[153..155]` | versão do módulo (`01 02 0b` = 1.2.11) 🟡 |
+| `[157..162]` | MAC da central (o mesmo do registro `3f 94`) ✅ |
 | `[163]` | sinal Wi-Fi: RSSI; se `>127`, ler como negativo (`256 - v` = \|dBm\|) 🟡 |
 
 ### 4.2 Arme / desarme / choque — comando `40 1e`  ✅
@@ -138,7 +153,11 @@ Relay→central: `40 1e <partição> <modo>`.
 | `02` | `01`/`00` | choque liga / desliga |
 | `ff` | `01`/`00` | ambos (partição 255) liga / desliga |
 
-No ELC o 2º byte observado é liga/desliga (`01`/`00`). Em centrais de alarme AMT o
+No ELC o 2º byte observado é liga/desliga (`01`/`00`). Armar o alarme (partição 1)
+**não** liga o choque (partição 2) — confirmado ao vivo. A resposta da central
+varia (`f0 fd 00`, eco `40 1e <p> <m>` ou nada), então **confirme pelo status**
+(`[30]`/`[31]`) — é o que o relay faz, reenviando se o estado não mudou. Cada
+mudança gera um evento `10 b2` (Contact-ID 407). Em centrais de alarme AMT o
 mesmo comando codifica o modo de arme (0=desarma, 1=total, 2=parcial/stay,
 3=forçado) — ver §7; não testado no ELC.
 
@@ -146,6 +165,8 @@ mesmo comando codifica o modo de arme (0=desarma, 1=total, 2=parcial/stay,
 Relay→central: `40 1f ff <z1 z2 z3 z4 z5 z6 z7 z8>`, um byte por zona
 (`01` = anulada, `00` = normal). O `ff` inicial é o seletor de partição (todas),
 igual ao `40 1e`. Ex.: `40 1f ff 00 00 01 00 00 00 00 00` anula só a zona 3.
+Confirmado ao vivo pelo relay: o bitmap `[62..63]` vai a `04 00` e volta a `00 00`.
+A central responde `f0 fd 00` (ACK) ou eco `40 1f ff 00`.
 
 ### 4.4 Histórico de eventos — comando `39 00`  ✅
 Relay→central: `39 00 <página 0..7>`; a central responde com a página de eventos,
@@ -159,8 +180,11 @@ liga/desliga):
 |---|---|
 | `00` | pânico **silencioso** (sem sirene; alerta ao monitoramento) |
 | `01` | pânico **audível** (dispara a sirene) |
-| `02` | fogo (só família AMT 8000) |
-| `03` | emergência médica (só família AMT 8000) |
+| `02` | fogo — **recusado no ELC** (`f0 fd 21`) ✅ |
+| `03` | emergência médica — **recusado no ELC** (`f0 fd 21`) ✅ |
+
+`00` e `01` confirmados ao vivo pelo relay: geram os eventos Contact-ID 122
+(silencioso) e 120 (audível) e não deixam alarme/disparo travado no status.
 
 Nosso teste confirmou o `01` (disparo audível, vídeo + mapa3). O `40 1a 00`
 apareceu na captura mapa e bate com o tipo "silencioso" (daí não ter efeito
@@ -170,13 +194,41 @@ visível). A tabela de tipos foi validada cruzando com a eng. reversa do APK em
 ### 4.6 Acionar PGM — comando `45 af`  ✅
 Relay→central: `45 af <pgm> <estado>`, PGM **base-0** (`00` = PGM1, `01` = PGM2),
 estado `01` = liga / `00` = desliga. Ex.: `45 af 00 01` liga a PGM1. A central só
-aceita se a PGM estiver no modo "acesso via app" (senão responde com erro).
+aceita se a PGM estiver no modo "acesso via app" (`03 e0` `[7]`/`[11]` = `01`);
+fora dele responde `f0 fd 21` (confirmado ao vivo pelo relay, PGMs em modo `00`).
 PGM = saída programável (contato que aciona um aparelho externo: portão, luz…).
 
 ### 4.7 Eventos — comando `10 b2`  ✅
-Central→relay empurra eventos (disparo, arme, desarme, energia…) no padrão
-Contact-ID, com dois timestamps. Relay responde `f0 fe`. É o que gera as
-notificações. Decodificação detalhada de cada código: 🟡 (parcial).
+Central→relay empurra eventos no padrão **Contact-ID**; o servidor responde `f0 fe`
+na sessão `00 00 00 00` (igual à nuvem). É o que gera as notificações. A central às
+vezes reenvia o mesmo evento segundos depois (mesmo com o ack, também com a nuvem):
+deduplique pelo 1º timestamp.
+
+Layout dos dados (após `10 b2`, 34 bytes) ✅:
+
+| Offset | Campo |
+|---|---|
+| `[0..5]` | `00 00 00 00 00 01` (fixo nas capturas) |
+| `[6]` | `08` |
+| `[7]` | qualificador: `01` = evento / abertura, `03` = restauração / fechamento |
+| `[8..10]` | código Contact-ID, 1 dígito por byte (**`0a` = 0**): `04 0a 07` = 407 |
+| `[11..12]` | partição (`00 01` alarme, `00 02` choque) |
+| `[13..15]` | zona ou usuário (`00 00 03` = zona 3) |
+| `[16..21]` | data/hora do evento (binário, `DD MM AA hh mm ss`) |
+| `[22..27]` | data/hora do envio |
+
+Códigos vistos (todas as capturas):
+
+| Código | Significado | Confiança |
+|---|---|---|
+| 3 407 / 1 407 | arme / desarme remoto (app, nuvem ou relay); partição 1 alarme, 2 choque | ✅ |
+| 3 409 / 1 409 | arme / desarme pelo controle remoto (usuário 0) | 🟡 |
+| 1 130 / 3 130 | disparo / restauração de zona (zona em `[13..15]`) | ✅ |
+| 1 120 | pânico audível | ✅ |
+| 1 122 | pânico silencioso | ✅ |
+| 3 422 / 1 422 | acionamento de PGM (partição/zona = nº da PGM) | 🟡 |
+| 1 306 | programação alterada (após gravar config) | 🟡 |
+| 1 410 / 3 412 | acesso remoto / download (aparecem ao conectar o app) | 🟡 |
 
 ### 4.8 Recusa de comando — `f0 fd <código>`  ✅
 Quando a central **recusa** um comando (`40 1e`, `40 1f`, `45 af`, `40 1a`) ela
@@ -189,16 +241,21 @@ Códigos observados:
   entre abrir e comandar, então nunca vê `0x21`. O mesmo código aparece na PGM
   (`45 af`) fora do modo "acesso via app" — ou seja, "sem permissão/sessão para
   esta função". **Solução:** não mandar `f0 f1` e reabrir a sessão antes do comando.
+  Também é a resposta a **função não suportada/não habilitada**: PGM fora do modo
+  app, pânico fogo/médico no ELC (confirmado ao vivo).
 - **`0x3f`** — visto no bypass (`40 1f`) recusado.
+- **`0x00` NÃO é recusa** ✅ — é o ACK genérico ("ok, sem dados"): a central responde
+  `f0 fd 00` a bypass, choque, consultas (`38 5c`, `00 60`, `46 xx`) e à hora, e o
+  efeito acontece. (Versões antigas do relay tratavam como recusa e reenviavam.)
 
 Um `f0 fd` de **keepalive** é diferente: o byte final é o checksum válido (xck), não
-um código de recusa. O relay distingue os dois e loga `[RECUSADO] code 0xNN` só na
-recusa real.
+um código. O relay loga `[RECUSADO] code 0xNN` só em recusa real (≠ `00`) e, para
+`40 1e`, confere o resultado no status.
 
-### 4.9 Desligar sirene — comando `40 19`  ⬜
-Relay→central: `40 19` silencia a sirene sem desarmar. Byte do comando conhecido
-pela eng. reversa do APK (`bobaoapae`, ver §7); **não testado no ELC** — falta
-confirmar payload/efeito em captura.
+### 4.9 Desligar sirene — comando `40 19`  🟡
+Relay→central: `40 19` silencia a sirene sem desarmar (eng. reversa do APK,
+`bobaoapae`, ver §7). Ao vivo a central **aceitou** (sem recusa), mas sem alarme
+tocando não houve efeito a observar — falta testar com a sirene disparada.
 
 ---
 
@@ -208,6 +265,9 @@ A configuração **não é um protocolo à parte**: é leitura/escrita de blocos
 memória, mesmo enquadramento.
 
 - **Ler**: relay→central `3f 12 <addr:2> <tam:2>` → central responde com os dados.
+  Só endereço/tamanho de **início de bloco** devolvem dados próprios; outros
+  endereços devolvem `f0 fd 00` ou **espelham** o bloco que os contém (endereços
+  baixos → zonas, ≥ `04 00` → usuários). Os dados reais acabam em ~`05 a4`.
 - **Gravar**: relay→central `2f 12 <addr:2> <tam:2> <dados:tam>`.
 
 ### Mapa de blocos (✅ confirmado por captura)
@@ -266,17 +326,21 @@ aqui para completar o mapa. Todos na sessão de app (`00 00 00 0N`).
 
 | Opcode | Bytes (ex.) | Resposta observada | Provável |
 |---|---|---|---|
-| `3f aa` | `3f aa 00` | — | **Pedir MAC** da central (bobaoapae: `GET_MAC`, ver §7) |
-| `38 5b` | `38 5b` | `38 5b 00` (ack curto) | consulta de status/flag (aparece em rajada de polling) |
-| `38 5c` | `38 5c 00` | status `0b 4a` / eventos | consulta que dispara atualização de status |
-| `0b 01` | `0b 01` | status `0b 4a` / eventos | variante curta de consulta de status |
-| `00 60` | `00 60` | — | consulta curta (sem resposta clara) |
-| `46 a0` | `46 a0 ff <N>` | status `0b 4a` | comando por partição (`ff`), `N`=02/03/04/06 variando |
-| `46 10` | `46 10 ff` | status `0b 4a` | comando por partição (`ff`) |
-| `0b 1a` | `0b 1a <hh mm ss> <evento…>` (registros ~15B) | — | **Buffer de eventos recentes** empurrado na sessão de app (timestamp + evento Contact-ID, primo do `10 b2`/`39 00`). Só no fluxo da nuvem; não usado no controle local |
+Testados ao vivo pelo relay (só leitura; nada acionou):
 
-Significado exato a confirmar com testes dirigidos (acionar a função no app anotando
-a hora e casar com o opcode).
+| Opcode | Bytes (ex.) | Resposta ao vivo | Conclusão |
+|---|---|---|---|
+| `3f aa` | `3f aa 00` | **nenhuma** | este firmware não responde (o MAC já vem no status `[157..162]`) |
+| `38 5b` | `38 5b` | `38 5b 00` | consulta de flag/estado |
+| `38 5c` | `38 5c` | `f0 fd 00` + status | pede atualização de status |
+| `0b 01` | `0b 01` | nenhuma clara | inconclusivo |
+| `00 60` | `00 60` | `f0 fd 00` + status | pede atualização de status |
+| `46 10` | `46 10 ff` | status `0b 4a` | consulta/refresh — não aciona |
+| `46 a0` | `46 a0 ff <N>` (N=02/03/04/06) | status / `f0 fd 00` | consulta por partição — não aciona |
+
+> `0b 1a`, listado antes como "buffer de eventos", é quase certamente **falso
+> positivo**: `0b 1a` = "11/26" (mês/ano em binário) dentro dos timestamps de
+> status/eventos (`10 0b 1a hh mm ss` = 16/11/26 …), não um opcode.
 
 ---
 

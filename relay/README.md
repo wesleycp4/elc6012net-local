@@ -10,7 +10,7 @@ Com a central numa rede onde o seu Linux é o gateway (ver
 
 ```bash
 # 1) sobe o relay com o painel web
-python3 elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --web 8080
+python3 elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --web 8088 --tz America/Sao_Paulo
 
 # 2) redireciona o servidor da nuvem para o relay — por DNS ou DNAT
 #    (na rede de casa: ver ../docs/redirecionamento.md):
@@ -19,23 +19,32 @@ python3 elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --web 8080
 echo 'address=/amt8000.intelbras.com.br/10.0.0.1' | sudo tee -a /tmp/dnsmasq.conf
 sudo pkill dnsmasq; sudo dnsmasq -C /tmp/dnsmasq.conf
 
-#  b) DNAT (nftables), como reforço / alternativa:
+#  b) DNAT (nftables) pela ORIGEM: todo TCP 9009/8080 da central vai p/ o relay
+#     (não depende de DNS nem do IP da nuvem; a central alterna 9009/8080 na falha)
 sudo nft add chain ip nat prerouting '{ type nat hook prerouting priority -100 ; }'
-sudo nft add rule ip nat prerouting ip daddr <IP_DA_NUVEM> tcp dport 9009 \
-    dnat to 10.0.0.1:9009
+sudo nft add rule ip nat prerouting ip saddr 10.0.0.134 tcp dport '{ 8080, 9009 }' \
+    ip daddr != 10.0.0.1 dnat to 10.0.0.1:9009
+sudo conntrack -D -s 10.0.0.134   # derruba a conexão atual com a nuvem (ou religue a central)
 ```
 
 Em segundos a central reconecta no relay (ou desligue/religue a central para
 forçar). Quando aparecer `[SESSAO] aberta`, controle de dois jeitos:
 
-- **Painel web** (via principal): `http://127.0.0.1:8080` — botões de choque, arme e
+- **Painel web** (via principal): `http://127.0.0.1:8088` — botões de choque, arme e
   tudo, com status ao vivo.
 - **Terminal (stdin)**:
   `arm | disarm | shockon | shockoff | allon | alloff | status | panic [0-3] |`
   `sirenoff | pgm <1|2> <on|off> | bypass <8 dígitos> | events | raw <hex> | quit`.
 
-O status só é impresso quando muda, e comandos recusados pela central aparecem como
-`[RECUSADO] code 0xNN` (o relay reabre a sessão e reenvia até 2x automaticamente).
+O status só é impresso quando muda. Recusas reais da central aparecem como
+`[RECUSADO] code 0xNN` (`0x21` = função não suportada/não habilitada, ex.: PGM fora
+do modo app) e o relay reabre a sessão e reenvia até 2x; `f0 fd 00` é ACK. Para
+arme/desarme/choque o relay ainda confere no status e reenvia se o estado não mudou
+(`[OK] … confirmado pelo status`).
+
+**Fuso:** o relay manda a hora para a central. Se a máquina estiver em UTC, use
+`--tz America/Sao_Paulo` (senão a central fica 3 h adiantada e os eventos saem com
+hora errada).
 
 > ⚠️ O painel aciona uma **cerca elétrica** real e não pede confirmação. Ele faz
 > bind só em `127.0.0.1` (local). Enquanto o relay roda, a central **não** fala com
