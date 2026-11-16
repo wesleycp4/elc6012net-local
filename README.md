@@ -18,6 +18,28 @@ central aceita qualquer relay. Então dá para pôr a central para conectar num
 **relay local** e ter controle total dentro de casa, com integração ao Home
 Assistant, sem nuvem nenhuma.
 
+## Como funciona
+
+```
+              redirecionamento na rede (DNS ou DNAT)
+  ┌──────────┐   amt8000.intelbras.com.br → relay    ┌──────────────┐
+  │ Central  │ ───────────────  TCP 9009  ─────────▶ │  Relay local │
+  │ ELC 6012 │ ◀───── status / eventos / comandos ── │ (seu PC / HA)│
+  └──────────┘                                        └──────┬───────┘
+                                                             │ MQTT Discovery
+                                                      ┌──────▼───────┐
+                                                      │Home Assistant│
+                                                      └──────────────┘
+```
+
+A central abre uma conexão TCP de saída procurando o servidor da nuvem; o
+redirecionamento faz essa conexão cair no **relay local**, que fala o mesmo
+protocolo (sem TLS, sem autenticação do servidor) e expõe tudo no Home Assistant.
+
+**Modo híbrido** (experimental): o relay também repassa para a nuvem Intelbras
+(central ⇄ relay ⇄ nuvem) para manter o app oficial, injetando os comandos locais
+numa sessão própria — ver [docs/STATUS.md](docs/STATUS.md).
+
 ## ⚠️ Requisito: redirecionar a central
 
 A central tem o servidor da nuvem **fixo no firmware** (`amt8000.intelbras.com.br`,
@@ -30,25 +52,25 @@ via nuvem). Opções, como testar e gargalos:
 
 ## Estado atual
 
-- ✅ **Controle local confirmado ao vivo, sem nuvem**: a central conecta no relay e
-  responde a arme/desarme, choque e "tudo ligado/desligado" — validado fisicamente.
-- ✅ **Protocolo de controle** mapeado (registro, abertura de sessão `f0 f0`, status
-  de 164 bytes, `40 1e`, bypass, pânico, PGM, eventos Contact-ID decodificados) —
-  ver [PROTOCOL.md](PROTOCOL.md).
-- ✅ **Protocolo de configuração** mapeado (zonas + atributos, nome, pulsos falhos,
-  PGMs, usuários, Wi-Fi) — leitura/escrita de blocos de memória.
-- ✅ **Relay local** (`relay/elc_local_relay.py`): enquadramento com re-sincronização,
-  sessão de controle, status ao vivo, painel web e retry automático na recusa.
-- ✅ **Integração Home Assistant local** via MQTT Discovery (`relay/mqtt_bridge.py`),
-  **validada ao vivo** (arme/desarme e cerca pelo HA, zonas 1–8 com bits
-  confirmados) — ver [docs/homeassistant.md](docs/homeassistant.md).
-  Também empacotado como **App do Home Assistant**: adicione este repositório na
-  loja de Apps e instale o **ELC 6012 NET Local** (o **Híbrido** é experimental).
-- 🟡 Modo **híbrido** (manter o app Intelbras junto): túnel e comando local
-  funcionam, mas o app oficial não entrou no teste — segue na `experimental`.
-- ⬜ Pareamento de sensor sem fio, PGM temporizada, sirene `40 19` com alarme tocando.
+**✅ Validado ao vivo (sem nuvem):**
+- **Controle** — arme/desarme, choque e "tudo ligado/desligado", confirmado
+  fisicamente pelo painel web e pelo Home Assistant.
+- **Monitoração** — status de 164 bytes (choque, alarme, zonas, disparo, bypass,
+  relógio, sinal), eventos Contact-ID e bits de zona 1–8.
+- **Relay local** (`relay/elc_local_relay.py`) — enquadramento com re-sincronização,
+  sessão de controle, confirmação de comando pelo status, painel web.
+- **Home Assistant** via MQTT Discovery (`relay/mqtt_bridge.py`), e os dois **Apps do
+  HA** (Local validado; Híbrido experimental) — ver [docs/homeassistant.md](docs/homeassistant.md).
 
-Mapa completo e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
+**✅ Mapeado por captura** (protocolo completo): controle, eventos e configuração
+(zonas, nome, PGMs, usuários, Wi-Fi) — ver [PROTOCOL.md](PROTOCOL.md).
+
+**🟡 / ⬜ Pendente (não testado por nós):** modo híbrido (túnel funciona, mas o app
+oficial não reconectou no teste), gravação de config pelo relay (ex.: trocar o
+Wi-Fi), PGM temporizada, sirene `40 19` com alarme tocando, pareamento de sensor
+sem fio, e os caminhos de firmware do módulo ESP8266.
+
+Mapa detalhado, status de cada item e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
 
 ## Componentes
 
@@ -62,6 +84,9 @@ Mapa completo e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
 | [`docs/redirecionamento.md`](docs/redirecionamento.md) | Como redirecionar a central para o relay + gargalos |
 | [`docs/homeassistant.md`](docs/homeassistant.md) | Uso com Home Assistant (local via MQTT, sem nuvem) |
 | [`docs/firmware.md`](docs/firmware.md) | Mexer no firmware do módulo Wi-Fi (ESP8266): caminhos, limites e riscos |
+| [`docs/STATUS.md`](docs/STATUS.md) | Estado item a item (o que é confirmado × não testado) e testes abertos |
+| [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Marcos do projeto · como contribuir |
+| [`elc6012net_local/`](elc6012net_local) · [`elc6012net_hibrido/`](elc6012net_hibrido) | Apps do Home Assistant (Local validado · Híbrido experimental) |
 
 ## Caminho rápido
 
