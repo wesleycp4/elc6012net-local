@@ -40,6 +40,41 @@ modelo; o relay responde `f0 fe` (ok) e segue. Não há TLS, nem token, nem desa
 que a central valide. **Consequência: se a central conectar no seu servidor, ele é
 aceito** — é o que torna o controle local viável.
 
+### 1.1 Hardware do módulo de rede (Wi-Fi)  🟡
+
+O "NET" é um **módulo Espressif ESP-WROOM-02D** (ESP8266, Wi-Fi 2,4 GHz; marcação
+`CCAP18LP0180T9`, FCC ID `2ACTZ-ESPWROOM02D`), numa placa com serigrafia
+`intelbras` / `4114040/2`, LED `D1`, botão `S1` e um header de pinos — plugada na
+placa base do eletrificador (observado em unidade com placa base **1.1.0** / módulo
+**1.2.11**). A fragilidade da camada online combina com um chip barato e de baixo
+esforço de segurança.
+
+**Isso responde "dá para trocar o firmware do ESP?":**
+
+- O **ESP8266 não tem secure boot nem criptografia de flash** — esses recursos só
+  existem a partir do ESP32. Ou seja, a Intelbras **não tem como** ter travado o
+  chip por assinatura ou criptografia; a flash SPI é legível e regravável por
+  `esptool` (barrando só o acesso físico aos pinos). Confirme antes mesmo assim:
+  `esptool.py flash_id` e `esptool.py read_flash 0 0x400000 dump.bin` (faça o
+  **backup** antes de tudo).
+- O endereço `amt8000.intelbras.com.br` está **nesta flash** (não na config lida por
+  `3f 12`). Para eliminar o redirecionamento de DNS sem reescrever o firmware:
+  ler a flash → achar a string → trocar pelo seu endereço (**do mesmo tamanho ou
+  menor**, completando com `00`) → recalcular checksum/hash da imagem → regravar.
+  O resto do firmware fica intacto, inclusive a conversa com a placa base.
+- ⚠️ **Mas o ESP não é a central inteira.** A lógica de alarme/cerca mora num MCU na
+  placa base; o ESP provavelmente só faz a ponte com a nuvem, falando com esse MCU
+  por **serial, num protocolo próprio ainda não mapeado**. Trocar o firmware inteiro
+  do ESP (Tasmota/ESPHome) derruba a função de alarme até esse protocolo ser mapeado
+  (sniffando TX/RX entre módulo e placa base). Por isso o caminho de baixo risco é
+  **só mover a string de endereço**, não reescrever o firmware.
+- ⚠️ **Segurança física:** é um energizador ligado à rede elétrica, com alta tensão.
+  Tire da tomada, desligue a bateria e espere os capacitores descarregarem antes de
+  abrir. Risco de inutilizar a central, perder a garantia, e uma atualização OTA da
+  Intelbras desfaz a alteração. Nada disso foi testado aqui — o dump **não foi feito**.
+
+(Cross-validação: §1.2 do [projeto rhacius](https://github.com/rhacius/ha-elc6012net).)
+
 ---
 
 ## 2. Enquadramento
