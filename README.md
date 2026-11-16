@@ -61,6 +61,7 @@ Mapa completo e testes abertos: **[docs/STATUS.md](docs/STATUS.md)**.
 | [`tools/decode_capture.py`](tools/decode_capture.py) | Decodifica um `.pcap` (mascara SSID/senha) |
 | [`docs/redirecionamento.md`](docs/redirecionamento.md) | Como redirecionar a central para o relay + gargalos |
 | [`docs/homeassistant.md`](docs/homeassistant.md) | Uso com Home Assistant (local via MQTT, sem nuvem) |
+| [`docs/firmware.md`](docs/firmware.md) | Mexer no firmware do módulo Wi-Fi (ESP8266): caminhos, limites e riscos |
 
 ## Caminho rápido
 
