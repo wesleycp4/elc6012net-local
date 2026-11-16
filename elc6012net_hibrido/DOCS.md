@@ -1,12 +1,15 @@
 # ELC 6012 NET Híbrido (experimental)
 
-> ⚠️ **EXPERIMENTAL — não testado ao vivo.** Use o App **ELC 6012 NET Local** para
-> o modo validado. Este App existe para testar o "melhor dos dois mundos".
+> ⚠️ **EXPERIMENTAL — ainda não funciona por completo.** No teste ao vivo de
+> 16/11/2026 o túnel com a nuvem e o comando local funcionaram, mas **o app
+> oficial da Intelbras não entrou**. A versão atual corrige uma suspeita (respostas
+> da sessão local iam para a nuvem), mas falta testar de novo. Use o App
+> **ELC 6012 NET Local** para o modo validado.
 
 Neste modo o App fica **no meio** entre a central e a nuvem Intelbras:
 
-- repassa todo o tráfego para a nuvem real → **o app oficial e os avisos sonoros
-  da Intelbras continuam funcionando**;
+- repassa o tráfego da central para a nuvem real → a ideia é **o app oficial e os
+  avisos da Intelbras continuarem funcionando** (ainda não confirmado);
 - lê o status da central e publica no Home Assistant (mesmas entidades do App
   Local: Cerca, Alarme, Disparo, Zona 1…8);
 - **injeta os comandos do HA** direto na central, numa sessão própria (índice 2),
