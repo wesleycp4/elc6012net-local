@@ -2,5 +2,9 @@
 *.pcap
 *.pcapng
 captura*
+# Dumps de flash do módulo contêm a config (NVS): SSID/senha Wi-Fi e código — nunca commitar.
+*.bin
+backup*
+dump*
 __pycache__/
 *.pyc
