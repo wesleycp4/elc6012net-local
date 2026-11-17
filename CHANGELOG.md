@@ -3,6 +3,17 @@
 Marcos do projeto. Datas no formato AAAA-MM-DD. Para o estado item a item, ver
 [docs/STATUS.md](docs/STATUS.md).
 
+## 2026-11-17 — Firmware: redirecionamento eliminado
+
+- **Patch do firmware validado ao vivo.** Trocado o servidor da nuvem na flash do
+  módulo ESP8266 (`amt8000.intelbras.com.br` -> nome DNS próprio apontando para o HA),
+  com checksum + SHA256 recalculados ([`tools/patch_server.py`](tools/patch_server.py)).
+  A central passou a conectar **direto no HA, sem nenhum redirecionamento de DNS/DNAT
+  no roteador** — o maior gargalo do projeto deixou de existir para quem consegue
+  regravar o módulo.
+- Novos [`docs/firmware.md`](docs/firmware.md) (guia de regravação) e
+  [`docs/firmware-dump.md`](docs/firmware-dump.md) (especificações do firmware).
+
 ## 2026-11-16 — Validação ao vivo e organização
 
 - **Controle e monitoração validados ao vivo** pelo relay, sem nuvem: arme/desarme,
