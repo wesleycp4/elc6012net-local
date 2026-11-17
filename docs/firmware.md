@@ -191,8 +191,10 @@ da imagem, strings) em **[docs/firmware-dump.md](firmware-dump.md)**.
 
 ## Situação atual
 
-- Dump da flash: **feito e analisado** (patch de endereço validado com `patch_server.py`;
-  regravação ao vivo: por conta de quem fizer).
+- Dump da flash: **feito e analisado**; patch de endereço (`patch_server.py`)
+  **validado ao vivo em 2026-11-17**: com o firmware apontando para um nome DNS próprio
+  (→ IP do HA), a central conecta direto no relay **sem redirecionamento no roteador**.
+  O app/nuvem da Intelbras deixa de funcionar (controle 100% local).
 - Serial ESP↔placa: **não mapeada** (é o que trava o caminho 3).
 - Recomendação prática: para "local + nuvem juntos", use o **modo híbrido** (pronto);
   para tirar o redirecionamento de vez, o **caminho 2** (patch do endereço) é o de
