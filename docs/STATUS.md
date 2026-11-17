@@ -92,8 +92,12 @@ mande a captura decodificada (`tools/decode_capture.py`, que já mascara segredo
    (ex.: renomear uma zona `00 00`) antes de blocos sensíveis como Wi-Fi (`02 c0`).
 6. **Código de evento em aberto** (412) — acione a função anotando a
    hora e confira o evento `10 b2`.
-7. **Dump da flash do ESP8266** (avançado, com a central aberta) — ler a flash do
-   módulo com `esptool`, achar `amt8000.intelbras.com.br` e testar mover a string
-   para um endereço local (elimina o redirecionamento de DNS). Ver [firmware.md](firmware.md).
+7. **Patch do endereço na flash (ESP8266)** — ✅ dump feito e analisado; `amt8000...`
+   está em texto claro e a troca (com checksum+SHA256) é gerada por
+   [`tools/patch_server.py`](../tools/patch_server.py). Falta a regravação ao vivo por
+   quem fizer. Ver [firmware.md](firmware.md).
 8. **Mapear a serial ESP↔placa base** (avançado) — grampear TX/RX entre o módulo e o
    MCU do eletrificador. É o que trava um firmware próprio (ESPHome). Ver [firmware.md](firmware.md).
+9. **Bateria do painel / rede AC** — o firmware confirma eventos de falta/retorno de
+   AC e de bateria de sensor; mapear o evento `10 b2` de **bateria baixa do painel**
+   (disparar a condição e capturar) para expor no HA.

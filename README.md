@@ -81,6 +81,7 @@ Mapa detalhado, status de cada item e testes abertos: **[docs/STATUS.md](docs/ST
 | [`tools/setup_ap.sh`](tools/setup_ap.sh) | Transforma um Linux em gateway/AP para a central |
 | [`tools/relay_tap.py`](tools/relay_tap.py) | Proxy transparente com log (observa central⇄nuvem) |
 | [`tools/decode_capture.py`](tools/decode_capture.py) | Decodifica um `.pcap` (mascara SSID/senha) |
+| [`tools/patch_server.py`](tools/patch_server.py) | Troca o servidor da nuvem na flash do ESP8266 (corrige checksum+SHA256) — ver [docs/firmware.md](docs/firmware.md) |
 | [`docs/redirecionamento.md`](docs/redirecionamento.md) | Como redirecionar a central para o relay + gargalos |
 | [`docs/homeassistant.md`](docs/homeassistant.md) | Uso com Home Assistant (local via MQTT, sem nuvem) |
 | [`docs/firmware.md`](docs/firmware.md) | Mexer no firmware do módulo Wi-Fi (ESP8266): caminhos, limites e riscos |

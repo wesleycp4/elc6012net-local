@@ -84,26 +84,72 @@ imagem alterada é aceita.
    > **Módulo removido da placa (bare):** aí você mesmo faz o strapping — `EN`→3V3,
    > `IO15`→GND, `IO2`→3V3/solto, `IO0`→GND no boot (modo download) — além de
    > `3V3`/`GND`/`TXD`/`RXD`. Mantendo na placa, ignore esses.
-2. **Ache a string** `amt8000.intelbras.com.br` (e veja se há `amt.intelbras.com.br`):
-   ```bash
-   grep -abo "amt8000.intelbras.com.br" dump.bin
-   ```
-3. **Troque pelo seu endereço**, do **mesmo tamanho ou menor**, completando o resto
-   com `00` (não mova nada de lugar). Ex.: um host curto de DuckDNS apontando para o
-   HA, ou o IP do HA se o firmware aceitar IP. Edite no mesmo offset, sem inserir nem
-   remover bytes.
-4. **Recalcule o checksum/hash da imagem.** O formato de imagem do ESP8266 tem um
-   checksum (e, conforme o build, um hash). Reempacote com `esptool elf2image` não se
-   aplica (não temos o ELF); edite a imagem e corrija o checksum do segmento, ou use
-   uma ferramenta que recalcule. **Este é o passo incerto** — validar relendo.
-5. **Regrave e teste:**
-   ```bash
-   esptool.py write_flash 0 dump_patched.bin
-   ```
-   Se não subir, regrave o `dump.bin` original.
+2. **Escolha o endereço de destino.** Recomendado: um **nome de domínio** que você
+   aponta para o IP do HA na sua LAN (ex.: `elc.seudominio.com → 192.168.31.10`).
+   Vantagens: se o IP do HA mudar, você edita só o DNS (sem regravar), e **elimina o
+   redirecionamento de DNS no roteador**. Tem que caber em **≤ 24 caracteres** (ver
+   abaixo). Um **IP literal** (`192.168.31.10`) também cabe, mas o firmware faz
+   resolução de DNS mesmo assim — pode não aceitar IP; teste.
 
-Depois disso o módulo conecta direto no seu relay/HA, sem precisar de DNS nem DNAT.
-Uma atualização OTA da Intelbras desfaz a alteração.
+   > **Aponte o nome para o IP INTERNO.** Nada fica exposto na internet: de fora, o
+   > nome resolve para um IP privado inalcançável; só a sua LAN conecta. No Cloudflare,
+   > use registro **A "DNS only" (nuvem cinza)**, não proxied. **Nunca** aponte para um
+   > IP público com port-forward da 9009 — o relay não tem senha nem TLS.
+
+3. **Gere a imagem alterada** com a ferramenta [`tools/patch_server.py`](../tools/patch_server.py),
+   que troca as strings de host nos dois slots de OTA e **recalcula o checksum (XOR,
+   semente `0xEF`) e o SHA256 anexado** de cada imagem:
+   ```bash
+   python3 tools/patch_server.py dump.bin dump_patched.bin --novo elc.seudominio.com
+   # opcional: --bloquear-ota  (impede que uma atualização da Intelbras reverta o patch)
+   ```
+   Ela confere o checksum/SHA256 **antes** (aborta se não entender a imagem) e **depois**
+   (garante que ficou válida). Fazendo à mão: edite as strings no mesmo offset (novo +
+   `00` de terminação, resto preenchido com `00`, sem mover nada); o checksum é o XOR
+   de todos os dados dos segmentos com semente `0xEF`, gravado no último byte do bloco
+   alinhado em 16; o SHA256 é `sha256(cabeçalho..byte de checksum)` logo após ele.
+
+4. **Aponte o DNS.** No seu provedor (Cloudflare, etc.), crie `elc.seudominio.com`
+   como **A → IP do HA**, *DNS only*. Teste de um PC na LAN: `nslookup elc.seudominio.com`
+   deve devolver o IP do HA.
+
+5. **Regrave e teste.** Em modo download (segure PROGRAMAR e ligue), grave a imagem
+   inteira de volta, **sem alterar o cabeçalho** da flash:
+   ```bash
+   esptool --port COM? --before no-reset --after no-reset \
+     --flash-size keep --flash-mode keep --flash-freq keep \
+     write-flash 0x0 dump_patched.bin
+   ```
+   Religue a central e suba o relay/HA no IP de destino. Se algo der errado, **regrave
+   o `dump.bin` original** — por isso guarde-o para sempre.
+
+Depois disso o módulo conecta direto no seu relay/HA, **sem precisar de DNS/DNAT no
+roteador**. O app/nuvem da Intelbras para de funcionar (a central fala com o seu HA);
+para manter o app, rode o relay em modo híbrido (experimental). **Wi-Fi, sensores,
+zonas e usuários são config (ficam na NVS/central, não no firmware)** — mudá-los não
+exige regravar; com o app morto, você os gerencia pelo relay ou revertendo o firmware.
+
+### Mapa da flash (ESP8266 RTOS SDK, 2 MB) — confirmado no dump
+
+| Partição | Offset | Tam | Conteúdo |
+|---|---|---|---|
+| `nvs` | `0x009000` | 24 KB | config (inclui SSID/senha Wi-Fi) |
+| `otadata` | `0x00f000` | 8 KB | qual slot (`ota_0`/`ota_1`) está ativo |
+| `phy_init` | `0x011000` | 4 KB | calibração de RF |
+| `ota_0` | `0x012000` | 896 KB | app slot 0 (host em `~0x7b8e4`) |
+| `ota_1` | `0x112000` | 896 KB | app slot 1 (cópia; host em `~0x17b8e4`) |
+
+Hosts embutidos no app (texto claro, sem criptografia):
+`amt8000.intelbras.com.br` (modo NACIONAL), `global.amt8000.intelbras.com.br`
+(GLOBAL) e `amtupdate.intelbras.com.br` (OTA, com IP fixo `54.207.162.243`). A
+ferramenta troca os dois primeiros nos dois slots; `--bloquear-ota` também mata o
+terceiro e o IP.
+
+> ⚠️ **Pode variar de uma central para outra.** Offsets, versão de firmware, tamanho
+> da flash e até o layout de partições podem mudar entre lotes/versões da Intelbras —
+> **não há como garantir**. Sempre trabalhe sobre o **dump da sua própria unidade**;
+> a ferramenta localiza as strings e as partições dinamicamente e recusa a imagem se
+> o checksum não bater, em vez de assumir offsets fixos.
 
 ## Caminho 3 — firmware próprio (ESPHome/Tasmota)
 
@@ -127,13 +173,27 @@ Para viabilizar:
 da gravação/boot log (GPIO1/3). Confirme por qual par de pinos a placa conversa antes
 de planejar logs e gravação.
 
+## O que o dump revelou
+
+- **Chip/SDK:** ESP8266EX, **ESP8266 RTOS SDK**, flash 2 MB, dual-OTA + NVS (mapa acima).
+- **Servidor em texto claro**, sem criptografia nem secure boot → editável.
+- **Integridade** 100% reproduzível: checksum XOR (semente `0xEF`) + SHA256 anexado.
+- **Eventos confirmados no firmware:** falta/retorno de **rede AC**
+  (`DETECTADO FALHA REDE AC` / `RESTAURADO REDE AC`) e **bateria de sensor**
+  (`SENSOR BATERIA DETECTADA/RESTAURADA`) — mapeáveis como eventos/sensores no HA.
+- **Limite:** o ESP é só a ponte Wi-Fi. Bateria interna do painel, disparo e lógica de
+  alarme ficam no **MCU da placa base**, fora deste dump — o firmware não traz um campo
+  de "bateria do painel"; isso se mapeia por captura (evento `10 b2` de bateria baixa)
+  ou por um bit de "problema" no status.
+
 ## Situação atual
 
-- Dump da flash: **não feito**.
+- Dump da flash: **feito e analisado** (patch de endereço validado com `patch_server.py`;
+  regravação ao vivo: por conta de quem fizer).
 - Serial ESP↔placa: **não mapeada** (é o que trava o caminho 3).
 - Recomendação prática: para "local + nuvem juntos", use o **modo híbrido** (pronto);
-  para tirar o redirecionamento, o **caminho 2** é o de menor risco.
+  para tirar o redirecionamento de vez, o **caminho 2** (patch do endereço) é o de
+  menor risco.
 
-Se um dia a central for aberta para o caminho 2, aproveite para já grampear a serial
-interna (caminho 3) e capturar alguns comandos — isso define se o firmware próprio é
-viável.
+Se a central for aberta para o caminho 2, aproveite para já grampear a serial interna
+(caminho 3) e capturar alguns comandos — isso define se o firmware próprio é viável.
