@@ -85,6 +85,7 @@ Mapa detalhado, status de cada item e testes abertos: **[docs/STATUS.md](docs/ST
 | [`docs/redirecionamento.md`](docs/redirecionamento.md) | Como redirecionar a central para o relay + gargalos |
 | [`docs/homeassistant.md`](docs/homeassistant.md) | Uso com Home Assistant (local via MQTT, sem nuvem) |
 | [`docs/firmware.md`](docs/firmware.md) | Mexer no firmware do módulo Wi-Fi (ESP8266): caminhos, limites e riscos |
+| [`docs/firmware-dump.md`](docs/firmware-dump.md) | Especificações do firmware extraídas do dump (chip, SDK, partições, strings) |
 | [`docs/STATUS.md`](docs/STATUS.md) | Estado item a item (o que é confirmado × não testado) e testes abertos |
 | [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Marcos do projeto · como contribuir |
 | [`elc6012net_local/`](elc6012net_local) · [`elc6012net_hibrido/`](elc6012net_hibrido) | Apps do Home Assistant (Local validado · Híbrido experimental) |
