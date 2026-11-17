@@ -175,7 +175,10 @@ de planejar logs e gravação.
 
 ## O que o dump revelou
 
-- **Chip/SDK:** ESP8266EX, **ESP8266 RTOS SDK**, flash 2 MB, dual-OTA + NVS (mapa acima).
+Resumo abaixo; especificações completas (identidade, SDK/build, partições, estrutura
+da imagem, strings) em **[docs/firmware-dump.md](firmware-dump.md)**.
+
+- **Chip/SDK:** ESP8266EX, **ESP8266 RTOS SDK v3.4**, flash 2 MB, dual-OTA + NVS (mapa acima).
 - **Servidor em texto claro**, sem criptografia nem secure boot → editável.
 - **Integridade** 100% reproduzível: checksum XOR (semente `0xEF`) + SHA256 anexado.
 - **Eventos confirmados no firmware:** falta/retorno de **rede AC**
