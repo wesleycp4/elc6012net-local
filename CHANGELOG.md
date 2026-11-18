@@ -3,6 +3,22 @@
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 Versões dos Apps do Home Assistant entre parênteses.
 
+## 2026-11-18 — App Local 1.0.2, App Híbrido 0.1.3
+
+### Corrigido
+- Queda da conexão com a central não era detectada: o relay seguia como conectado, o
+  HA mostrava o último estado e um comando seguinte derrubava a thread com
+  `BrokenPipeError`. Agora qualquer falha de envio/recepção, ou 60 s sem dados da
+  central, encerra a conexão e marca o dispositivo como indisponível até a central
+  reconectar.
+- Arme/desarme/choque para o estado em que a central já está não é mais enviado (a
+  central recusava com `0x21` e o relay reenviava duas vezes).
+- Recusa `0x21` em arme/desarme/choque passa a ser conferida pelo status, sem
+  reenvio duplicado.
+
+### Adicionado
+- Horário em cada linha do log.
+
 ## 2026-11-17
 
 ### Adicionado

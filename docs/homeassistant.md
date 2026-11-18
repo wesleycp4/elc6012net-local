@@ -40,7 +40,11 @@ Com `name: ELC 6012 NET (local)`, os ids ficam com o prefixo `elc_6012_net_local
 | `binary_sensor.…_zona_1` … `_zona_8` | zona aberta | — |
 
 A disponibilidade segue a conexão da central: com a central desconectada do relay, as
-entidades ficam indisponíveis.
+entidades ficam indisponíveis. A queda é detectada por erro de conexão ou por 60 s sem
+nenhum dado da central. Comandos enviados nesse intervalo são descartados.
+
+Para ser avisado de uma queda, crie uma automação com gatilho de estado
+`unavailable` por alguns minutos na entidade do alarme.
 
 As zonas seguem a numeração da central. Renomeie as entidades com os nomes que você
 usa (os nomes cadastrados na central ficam no bloco de configuração `00 00`).

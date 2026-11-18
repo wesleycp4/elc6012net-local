@@ -17,9 +17,20 @@ Controle: Home Assistant via MQTT (--mqtt), painel web local (--web) ou stdin:
 Aciona uma cerca elétrica real. Enquanto a central estiver aqui, ela não fala com a
 nuvem Intelbras.
 """
-import argparse, json, os, socket, struct, sys, threading, time
+import argparse, builtins, json, os, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
+
+_print = builtins.print
+
+
+def _ts_print(*a, **k):
+    """print com horário (HH:MM:SS) no início de cada linha do log."""
+    _print(datetime.now().strftime("%H:%M:%S"), *a, **k)
+
+
+IDLE_TIMEOUT_MIN = 60   # s sem receber nada da central => conexão considerada morta
+
 
 def xck(body: bytes) -> int:
     c = 0
@@ -135,14 +146,46 @@ class Relay:
         self.tap_buf = b""
         self.fwd_buf = b""             # central->nuvem pendente (filtro da sessão injetada)
 
-    def send(self, session: bytes, payload: bytes, quiet: bool = False):
-        if not self.sock:
-            print("[!] central não conectada ainda"); return
+    def send(self, session: bytes, payload: bytes, quiet: bool = False) -> bool:
+        """Envia um frame. Devolve False se a central não está conectada ou se o
+        envio falhou (nesse caso a conexão é encerrada e o HA marca indisponível)."""
+        conn = self.sock
+        if not conn:
+            print("[!] central não conectada"); return False
         frame = build(session, payload)
-        with self.lock:
-            self.sock.sendall(frame)
+        try:
+            with self.lock:
+                conn.sendall(frame)
+        except OSError as e:
+            self.drop(conn, f"falha ao enviar: {e.__class__.__name__}")
+            return False
         if not quiet:                      # poll/keepalive passam quiet=True (não poluem o terminal)
             print(f"  -> {frame.hex(' ')}")
+        return True
+
+    def drop(self, conn, reason: str):
+        """Encerra a conexão `conn`. Se for a conexão atual, limpa o estado e marca
+        o dispositivo como indisponível; a central reconecta sozinha."""
+        with self.lock:
+            current = self.sock is conn
+            up = getattr(self, "up", None) if current else None
+            if current:
+                self.sock = None
+                if up is not None:
+                    self.up = None
+                self.session_opened = False
+                self._pending_cmd = None
+        for s in (conn, up):
+            if s is None:
+                continue
+            try:
+                s.close()
+            except OSError:
+                pass
+        if current:
+            print(f"[!] central desconectou ({reason}) — aguardando reconexão")
+            if self.mqtt:
+                self.mqtt.set_available(False)
 
     def frames(self):
         """Extrai frames do buffer, re-sincronizando pelo cabeçalho.
@@ -236,6 +279,9 @@ class Relay:
         self._pending_cmd = None
         if code == 0x00:
             return                          # ACK
+        if op == "401e":                    # arme/desarme/choque: _verify confere pelo status
+            print(f"[RECUSADO] {op} code 0x{code:02x} — conferindo pelo status")
+            return
         if retry < 2 and self._last_control is not None:
             print(f"[RECUSADO] {op} code 0x{code:02x} — reabrindo e reenviando ({retry+1}/2)...")
             pl = self._last_control
@@ -256,9 +302,7 @@ class Relay:
         time.sleep(2.5)
         if self.sock is not conn or seq != self._ctrl_seq:
             return
-        try:
-            self.send(self.my_sid, CMD_MAP["status"], quiet=True)
-        except OSError:
+        if not self.send(self.my_sid, CMD_MAP["status"], quiet=True):
             return
         time.sleep(1.5)
         if self.sock is not conn or seq != self._ctrl_seq or not self.last_status:
@@ -274,20 +318,24 @@ class Relay:
 
     def reader(self, conn):
         # Atado à conexão: sai se outra conexão assumir (a central reconecta no churn de WiFi).
+        reason = "conexão fechada pela central"
         while self.sock is conn:
             try:
                 data = conn.recv(4096)
-            except OSError:
+            except socket.timeout:
+                reason = f"sem dados há {conn.gettimeout():.0f}s"
+                break
+            except OSError as e:
+                reason = f"erro de conexão: {e.__class__.__name__}"
                 break
             if not data:
-                print("[!] central desconectou")
-                if self.mqtt: self.mqtt.set_available(False)
                 break
             if self.sock is not conn:
-                break
+                return
             self.buf += data
             for cmd, frame in self.frames():
                 self.handle(frame, cmd)
+        self.drop(conn, reason)
 
     def _hist(self, body):
         """Decodifica uma página de histórico (39 00 <pág> <eventos de 15B>)."""
@@ -308,8 +356,22 @@ class Relay:
         while self.sock is conn:
             time.sleep(interval)
             if self.sock is conn and self.session_opened:
-                try: self.send(self.SID, CMD_MAP["status"], quiet=True)
-                except OSError: return
+                if not self.send(self.SID, CMD_MAP["status"], quiet=True):
+                    return
+
+    def _already(self, payload) -> bool:
+        """Arme/desarme/choque já no estado pedido: não envia (a central recusaria
+        com 0x21) e republica o estado para o HA corrigir a interface."""
+        if payload[:2] != b"\x40\x1e" or len(payload) < 4 or not self.last_status:
+            return False
+        keys = {0x01: ("alarme",), 0x02: ("choque",), 0xff: ("alarme", "choque")}.get(payload[2])
+        want = bool(payload[3])
+        if not keys or not all(self.last_status.get(k) == want for k in keys):
+            return False
+        print(f"[=] {payload.hex()}: já está nesse estado — nada a enviar")
+        if self.mqtt:
+            self.mqtt.publish_state(self.last_status)
+        return True
 
     def control(self, payload, _retry=0):
         """Envia um comando de controle. Reabre a sessão (f0f0, quiet) e, após uma
@@ -317,19 +379,23 @@ class Relay:
         manda f0f1 (=DISCONNECT, derruba a sessão -> NACK 0x21). Numa recusa, o
         handle() chama isto de novo (até 2x) reabrindo e reenviando."""
         if not self.sock:
-            print("[!] central não conectada ainda"); return
+            print("[!] central não conectada — comando descartado"); return
+        if _retry == 0 and self._already(payload):
+            return
         with self._ctrl_lock:                                 # serializa a sequência inteira
             if _retry == 0:
                 self._last_control = payload
             self._ctrl_seq += 1
             seq = self._ctrl_seq
-            # No modo proxy injetamos numa sessão própria (índice 2) p/ não brigar com
-            # a sessão da nuvem (índice 1); no modo substituir usamos a nossa (1).
+            # No modo proxy os comandos vão numa sessão própria (inject_session) p/ não
+            # brigar com a sessão da nuvem; no modo substituir usamos a nossa (1).
             sid = self.my_sid
-            self.send(sid, self.session_open, quiet=True)   # (re)abre a sessão de controle
-            time.sleep(0.15)                                 # deixa a central processar
+            if not self.send(sid, self.session_open, quiet=True):        # reabre a sessão de controle
+                print("[!] comando não enviado: central desconectada"); return
+            time.sleep(0.15)                                      # deixa a central processar a reabertura
             self._pending_cmd = (payload[:2].hex(), time.time(), _retry)
-            self.send(sid, payload)                          # manda o comando
+            if not self.send(sid, payload):                       # manda o comando
+                print("[!] comando não enviado: central desconectada"); return
         if payload[:2] == b"\x40\x1e" and len(payload) >= 4:
             threading.Thread(target=self._verify, args=(payload, _retry, seq), daemon=True).start()
 
@@ -377,17 +443,17 @@ class Relay:
 
     def proxy_c2u(self, conn, up):
         """central -> nuvem: encaminha (menos a nossa sessão) e TAPeia p/ o HA."""
+        reason = "conexão fechada pela central"
         while self.sock is conn:
             try:
                 data = conn.recv(4096)
-            except OSError:
+            except OSError as e:
+                reason = f"erro de conexão: {e.__class__.__name__}"
                 break
             if not data:
-                print("[proxy] central caiu")
-                if self.mqtt: self.mqtt.set_available(False)
                 break
             if self.sock is not conn:
-                break
+                return
             if up:
                 try:
                     fwd = self._c2u_filter(data)
@@ -400,6 +466,7 @@ class Relay:
             frames, self.tap_buf = split_frames(self.tap_buf)
             for cmd, frame in frames:
                 self.tap(frame, cmd)
+        self.drop(conn, reason)
 
     def proxy_u2c(self, conn, up):
         """nuvem -> central: encaminha CRU."""
@@ -479,6 +546,7 @@ def start_web(relay, port):
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
 def main():
+    builtins.print = _ts_print          # horário em todas as linhas do log (relay e MQTT)
     ap = argparse.ArgumentParser()
     ap.add_argument("--listen", default="0.0.0.0:9009")
     ap.add_argument("--poll", type=int, default=15)
@@ -540,6 +608,9 @@ def main():
         while True:
             conn, addr = srv.accept()
             print(f"== central conectou de {addr}")
+            if not r.proxy:   # no híbrido quem consulta é a nuvem: sem timeout de ociosidade
+                conn.settimeout(max(IDLE_TIMEOUT_MIN, 4 * ns.poll))   # detecta conexão morta
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             # reset de estado por conexão (a central reconecta sozinha no churn de WiFi):
             # sem isso, buf/sessão/threads antigas vazam e dessincronizam.
             with r.lock:
