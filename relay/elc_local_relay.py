@@ -1,30 +1,21 @@
 #!/usr/bin/env python3
 """
-elc_local_relay.py — relay LOCAL para o Intelbras ELC 6012 NET.
+elc_local_relay.py — relay local para o Intelbras ELC 6012 NET.
 
-Emula o papel da nuvem Intelbras: a central conecta AQUI (em vez de
-amt8000.intelbras.com.br) e passa a ser controlada 100% localmente, sem nuvem e
-sem app. Controle (arme/desarme/choque/tudo) confirmado ao vivo. Baseado em
-captura do protocolo real (central <-> relay, TCP 9009, texto claro, sem
-autenticação do servidor).
+Faz o papel do servidor da nuvem Intelbras: a central conecta aqui e passa a ser
+controlada localmente. Protocolo em PROTOCOL.md; instalação (inclusive como fazer a
+central chegar até aqui) em docs/instalacao.md.
 
-Como pôr a central para conectar aqui (no notebook-gateway da central) —
-redirecione o servidor da nuvem para este relay, por DNS ou DNAT:
-    # DNS (dnsmasq): resolve o host da nuvem para o IP do relay
-    address=/amt8000.intelbras.com.br/10.0.0.1
-    # ou DNAT (nftables) pela origem: todo TCP 9009/8080 da central -> relay
-    sudo nft add rule ip nat prerouting ip saddr <IP-da-central> \
-        tcp dport { 8080, 9009 } ip daddr != 10.0.0.1 dnat to 10.0.0.1:9009
-    python3 elc_local_relay.py --listen 0.0.0.0:9009 --web 8088 --tz America/Sao_Paulo
+    python3 elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --tz America/Sao_Paulo \
+        [--web 8088] [--mqtt broker:1883 --mqtt-user usuario]
 
-Controle: painel web em http://127.0.0.1:8080 (via principal), Home Assistant via
-MQTT (--mqtt, ver docs/homeassistant.md), ou stdin:
+Controle: Home Assistant via MQTT (--mqtt), painel web local (--web) ou stdin:
     arm | disarm | shockon | shockoff | allon | alloff | status |
-    panic [0-3] | sirenoff | pgm <1|2> <on|off> | bypass <8 dígitos> |
+    panic [0|1] | sirenoff | pgm <1|2> <on|off> | bypass <8 dígitos> |
     events | raw <hex> | quit
 
-Enquanto isto roda, a central não fala com a Intelbras (sem as notificações da
-nuvem deles). Aciona uma CERCA ELÉTRICA real — teste ciente disso.
+Aciona uma cerca elétrica real. Enquanto a central estiver aqui, ela não fala com a
+nuvem Intelbras.
 """
 import argparse, json, os, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -76,12 +67,9 @@ def decode_status(p: bytes):
     rel    = f"{p[72]:02d}/{p[73]:02d}/{p[74]:02d} {p[75]:02d}:{p[76]:02d}:{p[77]:02d}"
     return f"choque={choque} alarme={alarme} zonas={zonas} disparo={disp} sinal=-{sig}dBm relogio={rel}"
 
-# Abertura de sessão de CONTROLE. Bytes fixos observados na nuvem real em TODAS as
-# capturas de arme/desarme/choque (o `03 03 06 05 09` é constante). NÃO leva o
-# código de acesso — a central não autentica o servidor, então o código nem
-# aparece no tráfego. Esta sessão autoriza status E comandos. (A variante
-# `f0 f0 01 <código> 10 00` abre só leitura: a central aceita status mas dá NACK
-# em 40 1e — foi o que travou o 1º teste de comando.)
+# Abertura da sessão de controle (PROTOCOL §3). Payload fixo, igual ao usado pela
+# nuvem; libera status e comandos. A variante `f0 f0 01 <código> 10 00` abre uma
+# sessão só de leitura (comandos recebem recusa).
 SESSION_OPEN_HEX = "f0f0030306050900000001"
 
 # comandos que a CENTRAL envia para o relay (usados para re-sincronizar frames)
@@ -162,7 +150,7 @@ class Relay:
         Por que não usar só 7+len nem o checksum:
         - A central às vezes manda f0fd/f0fe com um byte 00 extra, mas o campo de
           tamanho continua `00 02` — então 7+len consome 1 byte a menos e sobra
-          lixo (observado no teste ao vivo).
+          lixo.
         - O checksum recebido NÃO é o nosso xck (ex.: f0fe vem com f1, xck daria
           f2) e o status 164B nem tem checksum — não serve de âncora.
         Então, a cada frame, exigimos um cabeçalho plausível (`00 0N 00 00` +
@@ -233,8 +221,8 @@ class Relay:
 
     def _on_f0fd(self, frame: bytes):
         """Resposta da central logo após um comando nosso: `f0 fd <código>`.
-        - 0x00 = ACK genérico ("ok, sem dados") — NÃO é recusa (confirmado ao vivo:
-          bypass, choque e consultas respondem f0fd 00 e o efeito acontece).
+        - 0x00 = ACK genérico ("ok, sem dados") — NÃO é recusa (bypass,
+          choque e consultas respondem f0fd 00 e o efeito acontece).
         - 0x21 = recusa: função não suportada/não habilitada (PGM fora do modo app,
           pânico fogo/médico no ELC) ou sessão de controle caída.
         - num keepalive o byte é o checksum (xck) — ignorado.
@@ -505,8 +493,8 @@ def main():
                     help="senha do broker (ou variável de ambiente MQTT_PASSWORD, que não aparece no ps)")
     ap.add_argument("--mqtt-node", default="elc6012net", help="id do dispositivo no HA")
     ap.add_argument("--upstream", default="", help="[EXPERIMENTAL] modo proxy/híbrido: "
-                    "IP da nuvem real (host[:porta]) — repassa tudo p/ a Intelbras (app segue "
-                    "funcionando) e injeta comandos locais. Não testado; pode dar conflito.")
+                    "IP da nuvem (host[:porta]); repassa o tráfego à Intelbras e injeta os "
+                    "comandos locais numa sessão própria")
     ap.add_argument("--inject-session", type=int, default=2, choices=range(1, 16), metavar="1-15",
                     help="[EXPERIMENTAL] índice da sessão usada p/ os comandos locais no modo proxy. "
                     "A nuvem dá um índice por cliente (ponte de nuvem=1, app=2…): use um livre.")
@@ -594,17 +582,16 @@ def main():
         elif cmd in CMD_MAP:                             # arme/desarme/choque: comando de controle
             r.control(CMD_MAP[cmd])
         elif cmd == "panic" or cmd.startswith("panic "):
-            # 40 1a <tipo>: 0=silencioso, 1=audivel, 2=fogo, 3=medico (cross-val. bobaoapae).
-            # Confirmado em teste o tipo 1 (disparo audivel).
+            # 40 1a <tipo>: 0=silencioso, 1=audível; 2=fogo e 3=médico são recusados no ELC.
             pr = cmd.split()
             tipo = int(pr[1]) if len(pr) == 2 and pr[1] in ("0","1","2","3") else 1
             print(f"[!] PÂNICO tipo={tipo} ({'silencioso' if tipo==0 else 'audivel' if tipo==1 else 'fogo' if tipo==2 else 'medico'})")
             r.control(bytes.fromhex("401a") + bytes([tipo]))
         elif cmd == "sirenoff":
-            # 40 19 = desliga sirene sem desarmar (opcode do APK via bobaoapae; NÃO testado no ELC)
-            print("[*] desligar sirene (40 19) — nao testado no ELC")
+            # 40 19 = desliga a sirene sem desarmar (aceito pela central; efeito não verificado)
+            print("[*] desligar sirene (40 19)")
             r.control(bytes.fromhex("4019"))
-        elif cmd.startswith("pgm "):   # pgm <1|2> <on|off> (ordem dos params a confirmar)
+        elif cmd.startswith("pgm "):   # pgm <1|2> <on|off>
             pr = cmd.split()
             if len(pr) == 3 and pr[1] in ("1","2") and pr[2] in ("on","off"):
                 r.control(bytes.fromhex("45af") + bytes([int(pr[1])-1, 1 if pr[2]=="on" else 0]))  # PGM base-0

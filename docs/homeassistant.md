@@ -1,66 +1,126 @@
 # Home Assistant
 
-## Hoje (funcional, via nuvem)
-Para controle no HA **agora**, use o add-on MQTT (depende da nuvem Intelbras):
-- **[rhacius/ha-elc6012net](https://github.com/rhacius/ha-elc6012net)** — original.
-- **[wesleycp4/ha-elc6012net](https://github.com/wesleycp4/ha-elc6012net)** — fork
-  com suporte ao firmware que responde o status em 164 bytes (sem checksum),
-  RSSI com sinal e build local. Expõe: `alarm_control_panel`, `switch.choque`,
-  `binary_sensor.zona_1..8`, `switch.bypass_zona_1..8`, `sensor.ultimo_evento`,
-  `event.cerca_eletrica`, etc.
+O relay publica a central no Home Assistant por **MQTT Discovery**: as entidades
+aparecem sozinhas, o estado é atualizado a cada leitura e os comandos voltam pelo
+mesmo broker. Tudo local — não depende de internet.
 
-## Objetivo deste projeto (local, sem nuvem)
-Substituir o relay da Intelbras por um **relay local** (`relay/elc_local_relay.py`):
-a central conecta nele e passa a ser controlada 100% localmente. **O controle
-(arme/desarme/choque/tudo) já está confirmado ao vivo** pelo painel web/stdin do
-relay (ver [STATUS](STATUS.md)). A ponte local para o Home Assistant via MQTT
-(`relay/mqtt_bridge.py`) foi **validada ao vivo** em 16/11/2026: entidades criadas,
-arme/desarme e cerca comandados pelo HA.
+Instalação e o caminho até a central conectar: [instalacao.md](instalacao.md).
 
-### Integração local via MQTT Discovery (pronta)
-O relay traz uma ponte MQTT (`relay/mqtt_bridge.py`) que cria as entidades no HA
-automaticamente (MQTT Discovery), publica o estado quando a central muda e recebe
-os comandos — **tudo local, sem nuvem e sem internet**.
+## Apps
 
-Entidades criadas: `switch.cerca` (choque), `alarm_control_panel.alarme`
-(armar/desarmar, estado `disparo`→`triggered`), `binary_sensor.disparo` e
-`binary_sensor.zona_1..8`.
+| App | Uso | Estado |
+|---|---|---|
+| **ELC 6012 NET Local** | relay local, sem nuvem | estável |
+| **ELC 6012 NET Híbrido** | relay que também repassa para a nuvem Intelbras, tentando manter o app oficial | experimental |
 
-**Jeito mais fácil — App do HA (HA OS/Supervised):** em *Configurações → Apps →
-Loja → ⋮ → Repositórios*, adicione `https://github.com/wesleycp4/elc6012net-local`
-e instale um dos dois (só um por vez, ambos usam a porta 9009):
+Os dois escutam na porta 9009: rode um por vez. As credenciais do MQTT vêm do App
+Mosquitto automaticamente.
 
-- **ELC 6012 NET Local** — modo validado, sem nuvem (código da `main`).
-- **ELC 6012 NET Híbrido (experimental)** — tenta manter a nuvem/app Intelbras e
-  injetar comandos locais (código da `experimental`; no teste ao vivo o app oficial
-  não entrou).
+### Opções
 
-As credenciais do Mosquitto vêm sozinhas. Cada App tem a aba *Documentação* com o
-redirecionamento de DNS necessário (`amt8000.intelbras.com.br → IP do HA`) —
-obrigatório nos dois Apps; ver [redirecionamento.md](redirecionamento.md).
+| Opção | App | Padrão | Descrição |
+|---|---|---|---|
+| `poll` | Local | `5` | intervalo de leitura do status, em segundos |
+| `node` | ambos | `elc6012_local` / `elc6012_hibrido` | id do dispositivo no HA (prefixo dos tópicos) |
+| `name` | ambos | `ELC 6012 NET (local)` / `(híbrido)` | nome do dispositivo |
+| `upstream` | Híbrido | `52.67.212.35:9009` | servidor da nuvem Intelbras |
+| `inject_session` | Híbrido | `2` | índice da sessão usada pelos comandos locais |
 
-**Passo a passo manual (fora do HA OS):**
-1. Tenha um broker MQTT na rede — no HA OS, instale o add-on **Mosquitto broker** e
-   a integração **MQTT** (a descoberta já vem ligada).
-2. No gateway onde roda o relay: `pip install paho-mqtt`.
-3. Rode o relay apontando pro broker:
-   ```bash
-   python3 relay/elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 \
-       --mqtt SEU_BROKER:1883 --mqtt-user USUARIO --mqtt-pass SENHA
-   ```
-4. As entidades aparecem sozinhas no HA (dispositivo "Intelbras ELC 6012 NET").
-   Se a internet cair, continua tudo funcionando — a central fala com o relay e o
-   relay com o HA, tudo na sua LAN.
+A hora enviada à central usa o fuso do Home Assistant.
 
-A disponibilidade segue a central (online/offline via LWT). As zonas `zona_1..8`
-seguem a numeração da central (bits confirmados ao vivo); os nomes de cada zona
-estão no bloco de config `00 00` — renomeie as entidades no HA conforme eles.
+## Entidades
 
-### Alternativa sem MQTT (stopgap)
-Sem broker, dá pra usar as integrações nativas do HA apontando pro relay:
-`rest_command` para os `POST /cmd/*` e um sensor `rest` lendo `GET /status`
-(porém com polling e sem descoberta automática).
+Com `name: ELC 6012 NET (local)`, os ids ficam com o prefixo `elc_6012_net_local_`:
 
-### A evoluir no relay (contribuições)
-Publicar os eventos `10 b2` (Contact-ID, já decodificados em PROTOCOL §4.7) como
-entidade `event`, `switch.bypass_zona_1..8` e nomes das zonas lidos da central.
+| Entidade | Tipo | Comando |
+|---|---|---|
+| `alarm_control_panel.…_alarme` | alarme (partição 1) | armar / desarmar; estado `triggered` no disparo |
+| `switch.…_cerca` | choque da cerca (partição 2) | liga / desliga |
+| `binary_sensor.…_disparo` | alguma zona disparada | — |
+| `binary_sensor.…_zona_1` … `_zona_8` | zona aberta | — |
+
+A disponibilidade segue a conexão da central: com a central desconectada do relay, as
+entidades ficam indisponíveis.
+
+As zonas seguem a numeração da central. Renomeie as entidades com os nomes que você
+usa (os nomes cadastrados na central ficam no bloco de configuração `00 00`).
+
+> **Zonas com a central desarmada.** A atualização de "zona aberta" com a central
+> desarmada é intermitente — o mesmo acontece no app oficial. Com o alarme armado, a
+> abertura gera disparo imediato. Não use as zonas desarmadas como sensor de porta
+> confiável.
+
+## Tópicos MQTT
+
+Base `elc6012/<node>`:
+
+| Tópico | Conteúdo |
+|---|---|
+| `…/availability` | `online` / `offline` |
+| `…/state` | JSON com `choque`, `alarme`, `disparo`, `zona1`…`zona8` |
+| `…/alarme/set` | `ARM_AWAY` / `DISARM` |
+| `…/cerca/set` | `ON` / `OFF` |
+
+## Dashboard de exemplo
+
+Painel em *sections*, com o choque protegido por "segurar e confirmar":
+
+```yaml
+type: sections
+title: Cerca elétrica
+path: cerca
+icon: mdi:fence-electric
+max_columns: 3
+sections:
+  - type: grid
+    cards:
+      - type: heading
+        heading: Cerca elétrica
+        icon: mdi:fence-electric
+      - type: tile
+        entity: alarm_control_panel.elc_6012_net_local_alarme
+        name: Alarme
+        features:
+          - type: alarm-modes
+            modes: [armed_away, disarmed]
+        grid_options: {columns: full}
+      - type: tile
+        entity: switch.elc_6012_net_local_cerca
+        name: Choque — segure para alterar
+        icon: mdi:flash
+        color: red
+        tap_action: {action: more-info}
+        hold_action:
+          action: perform-action
+          perform_action: switch.toggle
+          target: {entity_id: switch.elc_6012_net_local_cerca}
+          confirmation: {text: Confirmar alteração do choque da cerca?}
+        grid_options: {columns: full}
+      - type: tile
+        entity: binary_sensor.elc_6012_net_local_disparo
+        name: Disparo
+        color: red
+  - type: grid
+    cards:
+      - type: heading
+        heading: Portas e janelas
+        icon: mdi:door
+      - type: tile
+        entity: binary_sensor.elc_6012_net_local_zona_1
+        grid_options: {columns: 6}
+      # … zona_2 a zona_8
+```
+
+## Sem MQTT
+
+O relay avulso tem um painel web (`--web <porta>`, só em `127.0.0.1`) com `GET /status`
+e `POST /cmd/<comando>`. Dá para usar com `rest_command` e um sensor `rest`, mas sem
+descoberta automática e com polling — o caminho recomendado é o MQTT.
+
+## Ainda não exposto
+
+O relay já fala os comandos abaixo, mas eles ainda não viraram entidades:
+
+- bypass de zona (`switch` por zona);
+- eventos Contact-ID (`event` / último evento), incluindo rede elétrica e bateria;
+- PGM e pânico.

@@ -1,75 +1,77 @@
 # Relay local
 
-`elc_local_relay.py` faz o papel da nuvem Intelbras: a central conecta **nele** e
-passa a ser controlada localmente, sem nuvem. **Controle (arme/desarme/choque/tudo)
-confirmado ao vivo** (ver [../docs/STATUS.md](../docs/STATUS.md)).
+`elc_local_relay.py` faz o papel do servidor da nuvem: a central conecta nele e passa
+a ser controlada localmente. `mqtt_bridge.py` publica a central no Home Assistant.
 
-## Como usar
-Com a central numa rede onde o seu Linux é o gateway (ver
-[../tools/setup_ap.sh](../tools/setup_ap.sh)):
+No Home Assistant, prefira o App (ver [instalação](../docs/instalacao.md)). Este
+documento cobre o uso avulso.
+
+## Requisitos
+
+- Python 3.9+
+- `paho-mqtt` — só para a integração MQTT (`pip install -r requirements.txt`)
+- A central redirecionada para esta máquina ([instalação, etapa 1](../docs/instalacao.md#etapa-1--fazer-a-central-chegar-no-relay))
+
+## Uso
 
 ```bash
-# 1) sobe o relay com o painel web
-python3 elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --web 8088 --tz America/Sao_Paulo
-
-# 2) redireciona o servidor da nuvem para o relay — por DNS ou DNAT
-#    (na rede de casa: ver ../docs/redirecionamento.md):
-
-#  a) DNS (dnsmasq): resolve o host da nuvem para o IP do relay
-echo 'address=/amt8000.intelbras.com.br/10.0.0.1' | sudo tee -a /tmp/dnsmasq.conf
-sudo pkill dnsmasq; sudo dnsmasq -C /tmp/dnsmasq.conf
-
-#  b) DNAT (nftables) pela ORIGEM: todo TCP 9009/8080 da central vai p/ o relay
-#     (não depende de DNS nem do IP da nuvem; a central alterna 9009/8080 na falha)
-sudo nft add chain ip nat prerouting '{ type nat hook prerouting priority -100 ; }'
-sudo nft add rule ip nat prerouting ip saddr 10.0.0.134 tcp dport '{ 8080, 9009 }' \
-    ip daddr != 10.0.0.1 dnat to 10.0.0.1:9009
-sudo conntrack -D -s 10.0.0.134   # derruba a conexão atual com a nuvem (ou religue a central)
+python3 elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --tz America/Sao_Paulo --web 8088
 ```
 
-Em segundos a central reconecta no relay (ou desligue/religue a central para
-forçar). Quando aparecer `[SESSAO] aberta`, controle de dois jeitos:
+| Opção | Padrão | Descrição |
+|---|---|---|
+| `--listen HOST:PORTA` | `0.0.0.0:9009` | endereço onde a central conecta |
+| `--poll N` | `15` | intervalo de leitura do status, em segundos |
+| `--tz FUSO` | env `TZ` | fuso da hora enviada à central (ex.: `America/Sao_Paulo`) |
+| `--web PORTA` | desligado | painel web em `127.0.0.1:PORTA` |
+| `--mqtt HOST[:PORTA]` | desligado | broker MQTT para o Home Assistant |
+| `--mqtt-user` | — | usuário do broker (senha em `MQTT_PASSWORD` ou `--mqtt-pass`) |
+| `--mqtt-node` | `elc6012net` | id do dispositivo no HA |
+| `--mqtt-name` | `Intelbras ELC 6012 NET` | nome do dispositivo no HA |
+| `--daemon` | — | sem terminal interativo (serviço) |
 
-- **Painel web** (via principal): `http://127.0.0.1:8088` — botões de choque, arme e
-  tudo, com status ao vivo.
-- **Terminal (stdin)**:
-  `arm | disarm | shockon | shockoff | allon | alloff | status | panic [0-3] |`
-  `sirenoff | pgm <1|2> <on|off> | bypass <8 dígitos> | events | raw <hex> | quit`.
+`--code` e `--keepalive` existem só por compatibilidade e são ignorados.
 
-O status só é impresso quando muda. Recusas reais da central aparecem como
-`[RECUSADO] code 0xNN` (`0x21` = função não suportada/não habilitada, ex.: PGM fora
-do modo app) e o relay reabre a sessão e reenvia até 2x; `f0 fd 00` é ACK. Para
-arme/desarme/choque o relay ainda confere no status e reenvia se o estado não mudou
+## Comandos
+
+Pelo terminal (stdin):
+
+| Comando | Ação |
+|---|---|
+| `arm` / `disarm` | arma / desarma o alarme |
+| `shockon` / `shockoff` | liga / desliga o choque |
+| `allon` / `alloff` | alarme e choque juntos |
+| `status` | lê o status |
+| `bypass <8 dígitos>` | anula zonas (`00100000` anula a zona 3) |
+| `panic [0-1]` | pânico silencioso (`0`) ou audível (`1`) |
+| `sirenoff` | silencia a sirene |
+| `pgm <1\|2> <on\|off>` | aciona uma PGM (só em modo "acesso via app") |
+| `events` | lê o histórico de eventos |
+| `raw <hex>` | envia um payload arbitrário |
+| `quit` | encerra |
+
+O painel web (`--web`) oferece arme/desarme e choque com status ao vivo; ele não pede
+confirmação e só escuta em `127.0.0.1`.
+
+## Log
+
+O status é impresso só quando muda. Recusas da central aparecem como
+`[RECUSADO] code 0xNN` (`0x21` = função não permitida); o relay reabre a sessão e
+reenvia até duas vezes. Para arme/desarme/choque, o resultado é conferido no status
 (`[OK] … confirmado pelo status`).
 
-**Fuso:** o relay manda a hora para a central. Se a máquina estiver em UTC, use
-`--tz America/Sao_Paulo` (senão a central fica 3 h adiantada e os eventos saem com
-hora errada).
+## Modo híbrido (experimental)
 
-> ⚠️ O painel aciona uma **cerca elétrica** real e não pede confirmação. Ele faz
-> bind só em `127.0.0.1` (local). Enquanto o relay roda, a central **não** fala com
-> a Intelbras (sem as notificações pela nuvem deles).
-
-## Modo híbrido / proxy (EXPERIMENTAL, não testado)
-
-Por padrão o relay **substitui** a nuvem: a central fala só com ele, e o app/avisos
-da Intelbras param. O modo híbrido (`--upstream`) é diferente: o relay vira um
-**túnel** entre a central e a nuvem real — repassa tudo nos dois sentidos (então o
-**app oficial e os avisos sonoros continuam funcionando**) e, em paralelo, lê o
-status pro HA e **injeta comandos locais**.
+Com `--upstream <host:porta>`, o relay repassa o tráfego da central para a nuvem
+Intelbras e injeta os comandos locais numa sessão própria (`--inject-session`, padrão
+`2`). Os frames dessa sessão não são repassados à nuvem. Se a internet cair, o
+controle local continua e o túnel é refeito quando ela volta.
 
 ```bash
-python3 relay/elc_local_relay.py --listen 0.0.0.0:9009 \
-    --upstream <IP_DA_NUVEM>:9009 --mqtt SEU_BROKER:1883
+python3 elc_local_relay.py --listen 0.0.0.0:9009 --upstream 52.67.212.35:9009 \
+    --inject-session 2 --mqtt <broker>:1883
 ```
 
-- A central conecta no relay (via DNS/DNAT), e o relay encaminha pra nuvem real.
-- Se a **internet/nuvem cair**, o controle local continua (a conexão central↔relay
-  é local); quando volta, o túnel se refaz.
-- Os comandos locais são injetados numa **sessão própria (índice 2)** para interferir
-  o mínimo possível na sessão que a nuvem usa (índice 1).
-
-> ⚠️ **Experimental e não testado.** Injetar comandos numa sessão que a nuvem também
-> usa pode dar conflito ocasional (a nuvem vê respostas de comandos que não mandou).
-> Pode funcionar liso ou ser instável — valide com calma. É por isso que este modo
-> vive na branch `experimental`, não na `main`.
+Use o IP da nuvem em `--upstream`, não o nome, para não cair no próprio
+redirecionamento. O app oficial não reconectou nos testes — ver
+[STATUS](../docs/STATUS.md).
