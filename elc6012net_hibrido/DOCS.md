@@ -1,46 +1,37 @@
 # ELC 6012 NET Híbrido (experimental)
 
-> ⚠️ **EXPERIMENTAL — ainda não funciona por completo.** No teste ao vivo de
-> 16/11/2026 o túnel com a nuvem e o comando local funcionaram, mas **o app
-> oficial da Intelbras não entrou**. A versão atual corrige uma suspeita (respostas
-> da sessão local iam para a nuvem), mas falta testar de novo. Use o App
-> **ELC 6012 NET Local** para o modo validado.
+> ⚠️ **Experimental.** O túnel com a nuvem e os comandos locais funcionam, mas nos
+> testes o app oficial da Intelbras não reconectou através do App. Para uso normal,
+> prefira o **ELC 6012 NET Local**.
 
-Neste modo o App fica **no meio** entre a central e a nuvem Intelbras:
+O App fica entre a central e a nuvem Intelbras:
 
-- repassa o tráfego da central para a nuvem real → a ideia é **o app oficial e os
-  avisos da Intelbras continuarem funcionando** (ainda não confirmado);
-- lê o status da central e publica no Home Assistant (mesmas entidades do App
-  Local: Cerca, Alarme, Disparo, Zona 1…8);
-- **injeta os comandos do HA** direto na central, numa sessão própria (índice 2),
-  para interferir o mínimo na sessão que a nuvem usa (índice 1);
-- se a internet/nuvem cair, o **controle local continua** (central↔App é local).
+- repassa o tráfego da central para a nuvem, com o objetivo de manter o app oficial e
+  as notificações funcionando;
+- publica a central no Home Assistant (mesmas entidades do App Local);
+- envia os comandos do Home Assistant numa sessão própria (`inject_session`), separada
+  das sessões da nuvem;
+- se a internet cair, o controle local continua.
 
 ## Antes de iniciar
 
-1. **App Mosquitto** rodando.
-2. **Redirecione a central para o HA**, igual ao App Local: no DNS da rede,
-   `amt8000.intelbras.com.br → IP do HA`; depois religue a central. O Híbrido
-   **também exige** esse redirecionamento (ele só mantém a nuvem ligada *depois*
-   que a central conecta). Como fazer:
-   https://github.com/wesleycp4/elc6012net-local/blob/main/docs/redirecionamento.md
-3. A opção `upstream` usa o **IP** da nuvem (padrão `52.67.212.35:9009`), para não
-   cair no próprio redirecionamento de DNS. Se a Intelbras mudar o IP, atualize.
-4. **Só um App por vez** na porta 9009 — pare o App Local antes.
-
-## Riscos conhecidos
-
-- A nuvem pode receber respostas de comandos que ela não enviou (os nossos). O
-  protocolo parece tolerar, mas pode haver instabilidade ou a sessão da nuvem
-  re-sincronizar. Teste com calma, perto da central.
-- Se algo ficar estranho, pare este App e desfaça o redirecionamento de DNS: a
-  central volta a falar direto com a nuvem.
+1. Tenha o **App Mosquitto** rodando.
+2. Faça a central conectar no IP deste Home Assistant, porta 9009 (mesmo requisito do
+   App Local): https://github.com/wesleycp4/elc6012net-local/blob/main/docs/instalacao.md
+3. Não rode junto com o App Local — os dois usam a porta 9009.
 
 ## Opções
 
-| Opção | Padrão | Para quê |
+| Opção | Padrão | Descrição |
 |---|---|---|
-| `upstream` | `52.67.212.35:9009` | Endereço da nuvem Intelbras real |
-| `inject_session` | `2` | Sessão dos comandos locais. A nuvem dá uma por cliente (ponte de nuvem = 1, app = 2…); com vários clientes, use um número livre (ex.: 5) |
-| `node` | `elc6012_hibrido` | ID do dispositivo no MQTT/HA |
-| `name` | `ELC 6012 NET (híbrido)` | Nome do dispositivo no HA |
+| `upstream` | `52.67.212.35:9009` | servidor da nuvem Intelbras. Use o IP, não o nome, para não cair no próprio redirecionamento; atualize se a Intelbras mudar o IP |
+| `inject_session` | `2` | sessão dos comandos locais. A nuvem atribui uma sessão por cliente conectado (1, 2…); com mais de um cliente, use um número livre (ex.: `5`) |
+| `node` | `elc6012_hibrido` | id do dispositivo no MQTT/HA |
+| `name` | `ELC 6012 NET (híbrido)` | nome do dispositivo |
+
+## Riscos
+
+- Comportamento da nuvem com um intermediário não está validado; pode haver
+  instabilidade na sessão do app oficial.
+- Para desfazer: pare o App e desfaça o redirecionamento — a central volta a falar
+  direto com a nuvem.

@@ -1,49 +1,45 @@
 # ELC 6012 NET Local
 
-Controla o eletrificador **Intelbras ELC 6012 NET** 100% pela sua rede, **sem a
-nuvem da Intelbras e sem internet**. A central conecta neste App (no lugar da
-nuvem) e as entidades aparecem sozinhas no Home Assistant via MQTT Discovery:
+Controla o eletrificador **Intelbras ELC 6012 NET** pela rede local, sem a nuvem da
+Intelbras e sem internet. A central conecta neste App no lugar da nuvem, e as
+entidades aparecem sozinhas no Home Assistant via MQTT:
 
-- `switch` **Cerca** (choque liga/desliga)
-- `alarm_control_panel` **Alarme** (armar/desarmar; mostra "disparado")
+- `alarm_control_panel` **Alarme** — armar / desarmar
+- `switch` **Cerca** — choque liga / desliga
 - `binary_sensor` **Disparo** e **Zona 1…8**
 
-Controle confirmado ao vivo (arme/desarme/choque/tudo). Projeto:
-https://github.com/wesleycp4/elc6012net-local
+Projeto e documentação completa: https://github.com/wesleycp4/elc6012net-local
 
 ## Antes de iniciar
 
-1. **App Mosquitto** instalado e rodando (as credenciais vêm sozinhas).
-2. **Redirecione a central para o HA.** A central procura o servidor
-   `amt8000.intelbras.com.br` na porta 9009. Faça esse nome apontar para o IP do
-   seu Home Assistant no DNS da sua rede (roteador, AdGuard, Pi-hole…), por
-   exemplo: `amt8000.intelbras.com.br → 192.168.31.10`. Depois desligue e religue a
-   central para ela reconectar. **Sem isso o App não funciona** — opções (roteador,
-   AdGuard, rede só para a central, DNAT), teste e limitações:
-   https://github.com/wesleycp4/elc6012net-local/blob/main/docs/redirecionamento.md
-3. **Pare o App de nuvem "ELC 6012 NET"**: com a central falando com este App, a
-   nuvem não a enxerga mais.
-4. **Só um App por vez** na porta 9009 — não rode junto com o "Híbrido".
+1. Tenha o **App Mosquitto** rodando (as credenciais do MQTT vêm automaticamente).
+2. Faça a central conectar no IP deste Home Assistant, porta 9009 — alterando o
+   firmware do módulo Wi-Fi ou redirecionando `amt8000.intelbras.com.br` na rede:
+   https://github.com/wesleycp4/elc6012net-local/blob/main/docs/instalacao.md
+3. Pare outras integrações da central (ex.: o App de nuvem) e não rode junto com o
+   App Híbrido — os dois usam a porta 9009.
+4. Ative **Iniciar no boot** e **Watchdog**: sem o App, a central fica sem servidor.
 
-## O que esperar
+## Funcionamento
 
-- Com a central conectada, o dispositivo fica **online** no HA; se ela cair, fica
-  **indisponível** e volta sozinho quando reconectar.
-- **O app oficial da Intelbras para de funcionar** neste modo (a central não fala
-  mais com a nuvem). Para manter o app/avisos da Intelbras, veja o App Híbrido.
-- As zonas 1–8 seguem a numeração da central (confirmado ao vivo). Renomeie as
-  entidades com os nomes de zona que você usa no app Intelbras.
+- Com a central conectada, o dispositivo fica disponível; se ela desconectar, as
+  entidades ficam indisponíveis e voltam sozinhas na reconexão.
+- O app oficial e as notificações da Intelbras não funcionam neste modo.
+- As zonas seguem a numeração da central; renomeie as entidades como preferir.
+- Com a central desarmada, a detecção de zona aberta é intermitente. Armada, a
+  abertura gera disparo imediato.
 - A hora enviada à central usa o fuso do Home Assistant.
 
 ## Opções
 
-| Opção | Padrão | Para quê |
+| Opção | Padrão | Descrição |
 |---|---|---|
-| `poll` | 5 | Intervalo (s) da consulta de status |
-| `node` | `elc6012_local` | ID do dispositivo no MQTT/HA |
-| `name` | `ELC 6012 NET (local)` | Nome do dispositivo no HA |
+| `poll` | `5` | intervalo de leitura do status, em segundos |
+| `node` | `elc6012_local` | id do dispositivo no MQTT/HA |
+| `name` | `ELC 6012 NET (local)` | nome do dispositivo |
 
 ## Segurança
 
-O App aciona uma **cerca elétrica**. Quem publicar nos tópicos de comando do MQTT
-consegue ligá-la — mantenha o broker com usuário/senha (o padrão do Mosquitto).
+O App aciona uma cerca elétrica e não tem autenticação própria: quem alcança a porta
+9009 ou publica nos tópicos de comando do MQTT controla a central. Mantenha o broker
+com usuário e senha e não exponha a porta 9009 à internet.

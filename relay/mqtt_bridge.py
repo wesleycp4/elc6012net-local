@@ -8,7 +8,7 @@ Entidades criadas:
   - switch      "Cerca"   (choque on/off)          -> 40 1e 02 01 / 00
   - alarm_panel "Alarme"  (armar/desarmar/disparo) -> 40 1e 01 01 / 00
   - binary_sensor "Disparo"
-  - binary_sensor "Zona 1..8"  (mapeamento de bit a confirmar)
+  - binary_sensor "Zona 1..8"
 
 Requer `paho-mqtt` (pip install paho-mqtt).
 """

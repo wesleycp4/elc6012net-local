@@ -1,43 +1,45 @@
 # Changelog
 
-Marcos do projeto. Datas no formato AAAA-MM-DD. Para o estado item a item, ver
-[docs/STATUS.md](docs/STATUS.md).
+Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
+Versões dos Apps do Home Assistant entre parênteses.
 
-## 2026-11-17 — Firmware: redirecionamento eliminado
+## 2026-11-17
 
-- **Patch do firmware validado ao vivo.** Trocado o servidor da nuvem na flash do
-  módulo ESP8266 (`amt8000.intelbras.com.br` -> nome DNS próprio apontando para o HA),
-  com checksum + SHA256 recalculados ([`tools/patch_server.py`](tools/patch_server.py)).
-  A central passou a conectar **direto no HA, sem nenhum redirecionamento de DNS/DNAT
-  no roteador** — o maior gargalo do projeto deixou de existir para quem consegue
-  regravar o módulo.
-- Novos [`docs/firmware.md`](docs/firmware.md) (guia de regravação) e
-  [`docs/firmware-dump.md`](docs/firmware-dump.md) (especificações do firmware).
+### Adicionado
+- Alteração do endereço do servidor no firmware do módulo Wi-Fi (ESP8266):
+  `tools/patch_server.py` e guia em `docs/firmware.md`. A central passa a conectar no
+  relay sem nenhuma configuração de rede.
+- `docs/instalacao.md`, reunindo as formas de levar a central até o relay e a
+  instalação do relay.
+- Referência técnica do firmware (partições, formato de imagem, endpoints).
 
-## 2026-11-16 — Validação ao vivo e organização
+### Alterado
+- Documentação reorganizada: `docs/redirecionamento.md` e `docs/firmware-dump.md`
+  incorporados em `instalacao.md` e `firmware.md`.
+- Documentada a detecção intermitente de zona aberta com a central desarmada.
 
-- **Controle e monitoração validados ao vivo** pelo relay, sem nuvem: arme/desarme,
-  choque, "tudo ligado/desligado", status, bits de zona e eventos.
-- **Home Assistant** via MQTT confirmado ao vivo (arme/desarme e cerca pelo HA).
-- **Protocolo:** eventos `10 b2` (Contact-ID) decodificados; `f0 fd 00` identificado
-  como ACK (não recusa); `40 1a` fogo/médico recusados no ELC; PGM só no modo app;
-  bits de zona/disparo/bypass confirmados; MAC no status `[157..162]`.
-- **Servidor é fixo no firmware:** varredura de toda a memória de config (`3f 12`)
-  não achou o endereço — o redirecionamento na rede é obrigatório
-  ([docs/redirecionamento.md](docs/redirecionamento.md)).
-- **Relay:** `f0 fd 00` não dispara mais reenvio; `40 1e` conferido pelo status;
-  `--tz` (evita hora errada com o relay em UTC); `control()` serializado.
-- **Apps do HA:** Local 1.0.1, Híbrido 0.1.2 (opção `inject_session`).
-- **Hardware:** módulo Wi-Fi ESP8266 (ESP-WROOM-02D) documentado; caminhos de
-  firmware em [docs/firmware.md](docs/firmware.md).
-- **Modo híbrido (experimental):** túnel e comando local funcionam, mas o app oficial
-  não reconectou no teste — **pendente**.
+## 2026-11-16 — App Local 1.0.1, App Híbrido 0.1.2
 
-## 2026-11 — Base
+### Adicionado
+- Eventos `10 b2` decodificados (Contact-ID): arme/desarme, disparo, pânico, PGM,
+  programação alterada, fim de sessão.
+- Opção `--tz` no relay (hora local enviada à central).
+- App Híbrido: opção `inject_session`.
 
-- Engenharia reversa do protocolo central ⇄ nuvem (TCP 9009, texto claro, sem auth
-  de servidor) — ver [PROTOCOL.md](PROTOCOL.md).
-- Relay local (`relay/elc_local_relay.py`) e ferramentas de captura (`tools/`).
-- Integração Home Assistant via MQTT Discovery e empacotamento como Apps do HA.
-- Baseado em [rhacius/ha-elc6012net](https://github.com/rhacius/ha-elc6012net),
-  cruzado com [bobaoapae/guardian-api-intelbras](https://github.com/bobaoapae/guardian-api-intelbras).
+### Corrigido
+- `f0 fd 00` passou a ser tratado como confirmação, não como recusa.
+- Arme/desarme/choque conferidos pelo status, com reenvio se o estado não mudar.
+- Modo híbrido não repassa mais à nuvem as respostas dos comandos locais.
+
+### Confirmado no equipamento
+- Controle, status, bypass, pânico, PGM e integração MQTT.
+- O endereço do servidor não existe na memória de configuração da central.
+- A central alterna entre as portas 9009 e 8080 ao reconectar.
+
+## 2026-11 — App Local 1.0.0, App Híbrido 0.1.0
+
+### Adicionado
+- Especificação do protocolo central ⇄ nuvem (`PROTOCOL.md`).
+- Relay local com painel web e ponte MQTT para o Home Assistant.
+- Apps do Home Assistant (Local e Híbrido).
+- Ferramentas de captura e decodificação (`tools/`).

@@ -1,15 +1,14 @@
-# Protocolo ELC 6012 NET — central ⇄ nuvem (relay AMT8000)
+# Protocolo ELC 6012 NET
 
-Documentação do protocolo que o eletrificador **Intelbras ELC 6012 NET** usa para
-falar com a nuvem Intelbras (relay `amt8000`), obtida por **engenharia reversa via
-captura de rede** do próprio equipamento, a partir da base de
-[rhacius/ha-elc6012net](https://github.com/rhacius/ha-elc6012net) (TCP 9009, **texto claro, sem TLS**).
+Protocolo que o eletrificador **Intelbras ELC 6012 NET** usa para falar com a nuvem
+Intelbras: TCP na porta 9009, em texto claro, sem TLS. Obtido por captura de rede do
+próprio equipamento, partindo do trabalho de
+[rhacius/ha-elc6012net](https://github.com/rhacius/ha-elc6012net). A implementação de
+referência do lado servidor está em [`relay/`](relay/).
 
-O objetivo é permitir **controle 100% local, sem nuvem**: um servidor que faz o
-papel do relay, ao qual a central se conecta (ver [`relay/`](relay/)).
+Referência: placa base 1.1.0, módulo Wi-Fi 1.2.11. Outras versões podem diferir.
 
-> MAC dos exemplos é fictício (`00:1A:3F:12:34:56`). Status de cada item:
-> ✅ confirmado em captura · 🟡 parcial / inferido · ⬜ ainda a validar.
+> ✅ confirmado · 🟡 parcial ou inferido · ⬜ não mapeado. MACs dos exemplos são fictícios.
 
 ---
 
@@ -18,54 +17,33 @@ papel do relay, ao qual a central se conecta (ver [`relay/`](relay/)).
 A central mantém uma conexão TCP **de saída, permanente**, com o relay. O app
 (ou um cliente) conecta no mesmo relay e é roteado até a central pelo MAC. Na LAN
 a central só responde a sondas de descoberta na porta 9009 (segundo o projeto
-rhacius); **todo o controle passa pelo relay**. Dois servidores:
+rhacius); **todo o controle passa pelo relay**.
 
-1. `amt.intelbras.com.br` — servidor "geral" (informa em qual relay o painel está)
-2. `amt8000.intelbras.com.br` — relay onde a sessão acontece (ex.: `52.67.212.35`)
+| Servidor | Papel |
+|---|---|
+| `amt8000.intelbras.com.br` | relay onde a central conecta (modo nacional; ex.: `52.67.212.35`) |
+| `global.amt8000.intelbras.com.br` | relay do modo global (presente no firmware) |
+| `amt.intelbras.com.br` | usado pelo app para descobrir em qual relay a central está |
+| `amtupdate.intelbras.com.br` | atualização de firmware do módulo (OTA) |
 
-O nome `amt8000.intelbras.com.br` é **fixo no firmware** ✅: nas capturas ele só
-aparece nas consultas DNS da central, e uma varredura de **toda** a memória de
-config (`3f 12`, 0x0000–0xfff0) não achou `amt8000`, `intelbras`, `.com`, `9009`
-nem `8080`. Não há comando para trocá-lo; para usar um relay local é preciso
-redirecioná-lo na rede (ver [docs/redirecionamento.md](docs/redirecionamento.md)).
+O nome `amt8000.intelbras.com.br` é **fixo no firmware do módulo Wi-Fi** ✅ — não
+existe na memória de configuração da central nem há comando para alterá-lo. Para usar
+um servidor local é preciso desviar a conexão na rede ou alterar o firmware (ver
+[docs/instalacao.md](docs/instalacao.md) e [docs/firmware.md](docs/firmware.md)).
 
-**Portas e reconexão** ✅ (captura do laboratório): a central conecta na porta
-**9009**; se a conexão falhar ou cair, ela **alterna entre 9009 e 8080** a cada
-~11 s (a nuvem atende nas duas) e **refaz a consulta DNS** a cada ciclo de
-reconexão. Um relay/DNAT deve cobrir as duas portas (ou só a 9009, aceitando que a
-central leve uma tentativa a mais para achá-lo).
+**Portas e reconexão** ✅ — a central conecta na porta **9009**; se a conexão falhar,
+alterna entre **9009 e 8080** a cada ~11 s (a nuvem atende nas duas) e refaz a
+consulta de DNS a cada ciclo.
 
-**Nenhuma autenticação do servidor.** ✅ (a *sessão de app* tem sua própria abertura, §3.4) A central se registra mandando só o MAC +
-modelo; o relay responde `f0 fe` (ok) e segue. Não há TLS, nem token, nem desafio
-que a central valide. **Consequência: se a central conectar no seu servidor, ele é
-aceito** — é o que torna o controle local viável.
+**Autenticação** ✅ — a central se registra enviando MAC e modelo e aceita o servidor
+que responder; não há TLS, token ou desafio. Por isso um servidor local funciona, e
+por isso ele deve ficar restrito à rede local.
 
-### 1.1 Hardware do módulo de rede (Wi-Fi)  🟡
+### 1.1 Módulo de rede
 
-O "NET" é um **módulo Espressif ESP-WROOM-02D** (ESP8266, Wi-Fi 2,4 GHz; marcação
-`CCAP18LP0180T9`, FCC ID `2ACTZ-ESPWROOM02D`), numa placa com serigrafia
-`intelbras` / `4114040/2`, LED `D1`, botão `S1` e um header de pinos — plugada na
-placa base do eletrificador (observado em unidade com placa base **1.1.0** / módulo
-**1.2.11**). A fragilidade da camada online combina com um chip barato e de baixo
-esforço de segurança.
-
-O **ESP8266 não tem secure boot nem criptografia de flash** — esses recursos só
-existem a partir do ESP32. Ou seja, a Intelbras **não tem como** ter travado o chip
-por assinatura ou criptografia: a flash SPI é legível e regravável por `esptool`
-(barrando só o acesso físico aos pinos). O endereço `amt8000.intelbras.com.br` fica
-**nesta flash** (não na config lida por `3f 12`). Mas o ESP **não é a central
-inteira** — a lógica de alarme/cerca mora num MCU na placa base, e o ESP só faz a
-ponte, falando com esse MCU por uma serial própria **ainda não mapeada**.
-
-Os caminhos para mexer no firmware (mover só a string do endereço × gravar um
-firmware próprio tipo ESPHome), o que cada um exige e os avisos de segurança física
-estão em **[docs/firmware.md](docs/firmware.md)**.
-
-> Há dois MACs: o **L2 do Wi-Fi** (`08:3a:8d:…`, OUI Espressif) e o **MAC do
-> protocolo** (`80:85:44:…`, no registro `3f 94` e no status `[157..162]`) — este é
-> um ID de conta/placa, não o MAC de rede.
-
-(Cross-validação: §1.2 do [projeto rhacius](https://github.com/rhacius/ha-elc6012net).)
+A conexão é feita por um módulo **ESP-WROOM-02D (ESP8266)** numa placa removível; a
+lógica de alarme e cerca fica num microcontrolador da placa base. Hardware, flash e
+como alterar o endereço do servidor: [docs/firmware.md](docs/firmware.md).
 
 ---
 
@@ -80,27 +58,25 @@ total = 7 + tam     checksum = XOR(todos os bytes anteriores) ^ 0xFF
 
 - `sessão` = **índice da sessão de app**, não um contador por mensagem. ✅ Vale
   `00 00 00 00` na conexão base (registro, hora, tiques `f0 fe`) e `00 00 00 0N`
-  durante a sessão de app N. A nuvem dá **um índice por cliente conectado**: nas
-  capturas com a ponte de nuvem do HA e o app do celular ao mesmo tempo, um ficou
-  na sessão 1 (poll a cada ~10 s) e o outro na 2 (abriu com `f0 f0 01 <senha>`,
-  leu `02 b0`/`03 e0`), em paralelo.
+  durante a sessão de app N. A nuvem atribui **um índice por cliente conectado**
+  (dois clientes simultâneos usam as sessões 1 e 2 em paralelo).
   Dentro de uma sessão o índice é **fixo**: `f0 f0`, `0b 4a`, `40 1e`, `f0 f1`
   todos usam o mesmo `00 00 00 0N`. A central ecoa com os dois primeiros bytes
-  trocados (`00 00 00 01` do relay ⇄ `00 01 00 00` da central).
+  trocados (`00 00 00 01` do servidor ⇄ `00 01 00 00` da central).
 - **Exceção — resposta de status (`0b 4a`):** o campo `tam` vale o total (164) e
-  **não há checksum** nesse firmware (placa 1.1.0 / módulo 1.2.11). Outros
-  firmwares mandam 165 com checksum. 🟡 (ver §4.1 do projeto rhacius)
-- **Checksum só nos frames que o relay envia.** ✅ (confirmado ao vivo) O XOR^0xFF
-  acima vale para relay→central; nos frames que a **central** manda ele **não
+  **não há checksum** nesta versão. Outras versões enviam 165 bytes com checksum 🟡
+  (segundo o projeto rhacius).
+- **Checksum só nos frames que o servidor envia.** ✅ O XOR^0xFF
+  acima vale para servidor → central; nos frames que a **central** manda ele **não
   bate** (ex.: `f0 fe` vem com `f1`, mas o XOR^0xFF daria `f2`), e o status 164B
-  nem tem checksum. O relay por isso **nunca valida** o checksum recebido.
+  nem tem checksum. Por isso o servidor **não deve validar** o checksum recebido.
 - **Enquadramento por re-sincronização.** ✅ A central às vezes manda `f0 fd`/`f0 fe`
   com um byte `00` a mais, mas mantém o campo `tam`=`00 02` — então `7+tam`
-  consome 1 byte a menos. Como o checksum não serve de âncora, o relay valida o
+  consome 1 byte a menos. Como o checksum não serve de âncora, o servidor valida o
   **cabeçalho** de cada frame (`00 0N 00 00` + comando conhecido) e, se o próximo
   byte não for um cabeçalho válido, descarta-o e realinha. Um `f0 fd`/`f0 fe`
   fica no máximo 1 byte torto (é só ack), e status/eventos/comandos voltam a cair
-  certos. Validado contra o tráfego do teste ao vivo (146 frames, 92 status).
+  certos.
 
 Exemplos reais (✅):
 
@@ -112,71 +88,62 @@ Exemplos reais (✅):
 
 ---
 
-## 3. Handshake de sessão (central ⇄ relay)
+## 3. Sessão (central ⇄ servidor)
 
-Ordem observada ao conectar (✅):
+Sequência ao conectar ✅:
 
-1. **Registro** (central→relay): comando `3f 94` — `3f 94 45 00 00 <MAC:6> <modelo> 01 01 …`
-   → relay responde `f0 fe` (ok). Sem senha/token. ✅
-2. **`f0 f7`** (central) → `f0 fe` (relay).
-3. **Hora** (central pede `f0 80 03`) → relay responde
-   `f0 80 <AA MM DD DS hh mm ss>` em **BCD** (DS = dia da semana) (ex.: `26 11 13 06 08 18 04`). ✅
-   A nuvem manda a **hora local** (Brasília). Um relay numa máquina em UTC deixa a
-   central 3 h adiantada — e os eventos/histórico com hora errada (visto no
-   laboratório); o relay tem `--tz` para isso. A central confirma com `f0 fd 00`
-   (sessão `00 00 00 00`). Logo após reconectar ela às vezes repete o pedido de
-   hora a cada ~5 s por alguns minutos (com o relógio zerado); responder sempre
-   resolve. 🟡
-4. **Abertura de sessão de controle** (`f0 f0`) ✅ — antes de pedir status ou mandar
-   comando, o relay abre a sessão na sessão `00 00 00 0N` enviando o payload **fixo**
-   `f0 f0 03 03 06 05 09 00 00 00 01` (o `03 03 06 05 09` é constante em todas as
-   capturas; o tail varia entre `00 00 00 01` e `00 00 01 00`). A central confirma
-   com `f0 f0 00 <ck>` na sessão `00 0N 00 00`. **Sem essa abertura, a central
-   ignora poll e comando.**
+1. **Registro** — a central envia `3f 94 45 00 00 <MAC:6> <modelo> 01 01 …`; o
+   servidor responde `f0 fe`.
+2. **Keepalive** — a central envia `f0 f7`; o servidor responde `f0 fe`.
+3. **Hora** — a central pede `f0 80 03`; o servidor responde
+   `f0 80 <AA MM DD DS hh mm ss>` em **BCD** (DS = dia da semana), ex.:
+   `26 11 13 06 08 18 04`. A central confirma com `f0 fd 00`. A nuvem envia a **hora
+   local** (Brasília); um servidor em UTC deixa eventos e histórico com a hora errada.
+   Logo após reconectar, a central pode repetir o pedido a cada ~5 s por alguns
+   minutos 🟡; basta responder sempre.
+4. **Abertura da sessão de controle** (`f0 f0`) — antes de ler status ou enviar
+   comandos, o servidor envia na sessão `00 00 00 0N` o payload fixo
+   `f0 f0 03 03 06 05 09 00 00 00 01` (o mesmo usado pela nuvem). A central confirma
+   com `f0 f0 00 <ck>` na sessão `00 0N 00 00`. Sem essa abertura, a central ignora
+   leituras e comandos.
 
-   🔑 **Esta sessão NÃO leva o código de acesso** — ele não aparece em texto claro
-   em nenhum frame do tráfego de controle. A central **não autentica o servidor**:
-   qualquer um que alcance a central e envie esse handshake fixo tem controle total
-   (é o que torna o controle local possível, e também a falha de segurança do
-   produto). O código de acesso fica exposto, sim, mas no **bloco de config `04 00`
-   (usuários)**, não aqui.
-
-   ⚠️ Existe também a variante `f0 f0 01 <dígitos> 10 00`, que abre uma sessão de
-   **só leitura**: a central responde status mas dá **NACK (`f0 fd`) em `40 1e`** e
-   outros comandos. Use sempre a sessão de controle acima para arme/desarme/choque.
-5. **Manter a sessão (e o que NÃO fazer)** ✅ — a sessão de controle se mantém com
-   (a) a central mandando `f0 f7` e o servidor respondendo `f0 fe`, e (b) os polls de
-   status `0b 4a`. ⚠️ **`f0 f1` é DISCONNECT, não keepalive**: o servidor manda
-   `f0 f1` para **encerrar** a sessão de controle (a central confirma com `f0 fe`) e
-   depois reabre com `f0 f0` antes do próximo comando. Mandar `f0 f1` "de keepalive"
-   **derruba a sessão** — o status continua (não depende dela), mas o comando
-   seguinte volta **NACK `0x21`**. Por isso o relay **nunca** manda `f0 f1` e
-   **reabre a sessão (`f0 f0`) antes de cada comando**, como o app faz.
+   A abertura não leva o código de acesso (ele fica no bloco de usuários `04 00`, §5).
+   A variante `f0 f0 01 <dígitos> 10 00` abre uma sessão **somente leitura**: status
+   funciona, comandos recebem recusa (`f0 fd`).
+5. **Manutenção** — a sessão se mantém com o keepalive da central (`f0 f7` → `f0 fe`)
+   e com as leituras de status. **`f0 f1` encerra a sessão** (não é keepalive):
+   depois dele, comandos recebem recusa `0x21` até uma nova abertura. A prática segura
+   é nunca enviar `f0 f1` e reabrir a sessão (`f0 f0`) antes de cada comando, como faz
+   o app.
 
 ---
 
 ## 4. Controle e monitoração
 
 ### 4.1 Status — comando `0b 4a`  ✅
-Relay manda `00 00 00 01 00 02 0b 4a bd`; central responde **164 bytes**.
-Offsets confirmados (0-based, a partir do byte 0 do frame):
+Servidor envia `00 00 00 01 00 02 0b 4a bd`; a central responde **164 bytes**.
+Offsets a partir do byte 0 do frame:
 
 | Offset | Campo |
 |---|---|
 | `[8]` | modelo (`0x35` = ELC 6012 NET) |
 | `[30]` bit0 | choque ligado |
 | `[31]` bit0 | alarme armado |
-| `[46..47]` | zonas abertas (bitmap): byte 46 bit0 = zona 1 … bit7 = zona 8 ✅ (ao vivo, 4 sensores) |
-| `[54..55]` | zonas disparadas (bitmap, mesma ordem) ✅ (disparo da zona 3 = `04 00`) |
+| `[46..47]` | zonas abertas (bitmap): byte 46 bit0 = zona 1 … bit7 = zona 8 ✅ — ver nota abaixo |
+| `[54..55]` | zonas disparadas (bitmap, mesma ordem; zona 3 = `04 00`) ✅ |
 | `[62..63]` | zonas em bypass (bitmap, mesma ordem) ✅ |
-| `[72..77]` | relógio: dia mês ano hh mm ss (**binário**, ex.: `10 0b 1a` = 16/11/26) |
+| `[72..77]` | relógio: dia mês ano hh mm ss (**binário**, ex.: `10 0b 1a` = 16/11/26) ✅ |
 | `[152]` | muda junto com o dia do mês (`[72]`) — contador/índice? 🟡 |
 | `[153..155]` | versão do módulo (`01 02 0b` = 1.2.11) 🟡 |
 | `[157..162]` | MAC da central (o mesmo do registro `3f 94`) ✅ |
 | `[163]` | sinal Wi-Fi: RSSI; se `>127`, ler como negativo (`256 - v` = \|dBm\|) 🟡 |
 
+**Zonas abertas com a central desarmada:** a atualização de `[46..47]` é intermitente —
+aberturas curtas ou em certas zonas podem não aparecer (o app oficial se comporta igual).
+Com o alarme armado, a abertura gera disparo (`[54..55]` e evento `10 b2`) imediatamente.
+
 ### 4.2 Arme / desarme / choque — comando `40 1e`  ✅
-Relay→central: `40 1e <partição> <modo>`.
+Servidor → central: `40 1e <partição> <modo>`.
 
 | Partição | Modo | Efeito |
 |---|---|---|
@@ -184,28 +151,25 @@ Relay→central: `40 1e <partição> <modo>`.
 | `02` | `01`/`00` | choque liga / desliga |
 | `ff` | `01`/`00` | ambos (partição 255) liga / desliga |
 
-No ELC o 2º byte observado é liga/desliga (`01`/`00`). Armar o alarme (partição 1)
-**não** liga o choque (partição 2) — confirmado ao vivo. A resposta da central
-varia (`f0 fd 00`, eco `40 1e <p> <m>` ou nada), então **confirme pelo status**
-(`[30]`/`[31]`) — é o que o relay faz, reenviando se o estado não mudou. Cada
-mudança gera um evento `10 b2` (Contact-ID 407). Em centrais de alarme AMT o
-mesmo comando codifica o modo de arme (0=desarma, 1=total, 2=parcial/stay,
-3=forçado) — ver §7; não testado no ELC.
+Armar o alarme (partição 1) não liga o choque (partição 2). A resposta da central
+varia (`f0 fd 00`, eco `40 1e <p> <m>` ou nenhuma), então **confirme pelo status**
+(`[30]`/`[31]`). Cada mudança gera um evento `10 b2` (Contact-ID 407). Nas centrais
+de alarme AMT o segundo byte codifica o modo de arme (0 desarma, 1 total, 2 parcial,
+3 forçado) — no ELC só `00`/`01` foram observados.
 
 ### 4.3 Bypass de zona — comando `40 1f`  ✅
-Relay→central: `40 1f ff <z1 z2 z3 z4 z5 z6 z7 z8>`, um byte por zona
+Servidor → central: `40 1f ff <z1 z2 z3 z4 z5 z6 z7 z8>`, um byte por zona
 (`01` = anulada, `00` = normal). O `ff` inicial é o seletor de partição (todas),
 igual ao `40 1e`. Ex.: `40 1f ff 00 00 01 00 00 00 00 00` anula só a zona 3.
-Confirmado ao vivo pelo relay: o bitmap `[62..63]` vai a `04 00` e volta a `00 00`.
-A central responde `f0 fd 00` (ACK) ou eco `40 1f ff 00`.
+O bitmap `[62..63]` reflete a mudança. A central responde `f0 fd 00` (ACK) ou eco
+`40 1f ff 00`.
 
 ### 4.4 Histórico de eventos — comando `39 00`  ✅
-Relay→central: `39 00 <página 0..7>`; a central responde com a página de eventos,
+Servidor → central: `39 00 <página 0..7>`; a central responde com a página de eventos,
 cada registro com 15 bytes = código Contact-ID (9B) + timestamp `DD MM YY HH MM SS`.
 
 ### 4.5 Pânico — comando `40 1a`  ✅
-Relay→central: `40 1a <tipo>`. O segundo byte é o **tipo de pânico** (não é
-liga/desliga):
+Servidor → central: `40 1a <tipo>`:
 
 | Tipo | Efeito |
 |---|---|
@@ -214,32 +178,26 @@ liga/desliga):
 | `02` | fogo — **recusado no ELC** (`f0 fd 21`) ✅ |
 | `03` | emergência médica — **recusado no ELC** (`f0 fd 21`) ✅ |
 
-`00` e `01` confirmados ao vivo pelo relay: geram os eventos Contact-ID 122
-(silencioso) e 120 (audível) e não deixam alarme/disparo travado no status.
-
-Nosso teste confirmou o `01` (disparo audível, vídeo + mapa3). O `40 1a 00`
-apareceu na captura mapa e bate com o tipo "silencioso" (daí não ter efeito
-visível). A tabela de tipos foi validada cruzando com a eng. reversa do APK em
-`bobaoapae/guardian-api-intelbras` (ver §7). O relay usa `01` por padrão.
+`00` e `01` geram os eventos Contact-ID 122 e 120 e não deixam alarme ou disparo
+travados no status. Os tipos coincidem com os do app (§7).
 
 ### 4.6 Acionar PGM — comando `45 af`  ✅
-Relay→central: `45 af <pgm> <estado>`, PGM **base-0** (`00` = PGM1, `01` = PGM2),
+Servidor → central: `45 af <pgm> <estado>`, PGM **base-0** (`00` = PGM1, `01` = PGM2),
 estado `01` = liga / `00` = desliga. Ex.: `45 af 00 01` liga a PGM1. A central só
 aceita se a PGM estiver no modo "acesso via app" (`03 e0` `[7]`/`[11]` = `01`);
-fora dele responde `f0 fd 21` (confirmado ao vivo pelo relay, PGMs em modo `00`).
-PGM = saída programável (contato que aciona um aparelho externo: portão, luz…).
+fora dele responde `f0 fd 21`. PGM é uma saída programável (contato para acionar um
+equipamento externo).
 
 ### 4.7 Eventos — comando `10 b2`  ✅
-Central→relay empurra eventos no padrão **Contact-ID**; o servidor responde `f0 fe`
-na sessão `00 00 00 00` (igual à nuvem). É o que gera as notificações. A central às
-vezes reenvia o mesmo evento segundos depois (mesmo com o ack, também com a nuvem):
-deduplique pelo 1º timestamp.
+A central envia eventos no padrão **Contact-ID**; o servidor responde `f0 fe` na sessão
+`00 00 00 00`. São a base das notificações. A central às vezes reenvia o mesmo evento
+segundos depois, mesmo com o ack: deduplique pelo primeiro timestamp.
 
 Layout dos dados (após `10 b2`, 34 bytes) ✅:
 
 | Offset | Campo |
 |---|---|
-| `[0..5]` | `00 00 00 00 00 01` (fixo nas capturas) |
+| `[0..5]` | `00 00 00 00 00 01` (constante) |
 | `[6]` | `08` |
 | `[7]` | qualificador: `01` = evento / abertura, `03` = restauração / fechamento |
 | `[8..10]` | código Contact-ID, 1 dígito por byte (**`0a` = 0**): `04 0a 07` = 407 |
@@ -248,64 +206,52 @@ Layout dos dados (após `10 b2`, 34 bytes) ✅:
 | `[16..21]` | data/hora do evento (binário, `DD MM AA hh mm ss`) |
 | `[22..27]` | data/hora do envio |
 
-Códigos vistos (todas as capturas):
+Códigos observados:
 
 | Código | Significado | Confiança |
 |---|---|---|
-| 3 407 / 1 407 | arme / desarme remoto (app, nuvem ou relay); partição 1 alarme, 2 choque | ✅ |
+| 3 407 / 1 407 | arme / desarme remoto; partição 1 alarme, 2 choque | ✅ |
 | 3 409 / 1 409 | arme / desarme pelo controle remoto RF (usuário 0) | ✅ |
 | 1 130 / 3 130 | disparo / restauração de zona (zona em `[13..15]`) | ✅ |
 | 1 120 | pânico audível | ✅ |
 | 1 122 | pânico silencioso | ✅ |
 | 1 422 / 3 422 | PGM ligada / desligada (partição e zona = nº da PGM) | ✅ |
-| 1 306 | programação alterada (após gravar config; visto ao trocar o Wi-Fi pelo app — a ponte de nuvem do HA também rotula assim) | ✅ |
-| 1 410 | **fim de sessão remota**: sai ~2 s depois de cada `f0 f1` (app ou relay) | ✅ |
-| 3 412 | visto uma vez durante comandos do app; significado em aberto | ⬜ |
+| 1 306 | programação alterada (após gravar configuração) | ✅ |
+| 1 410 | fim de sessão remota (~2 s após um `f0 f1`) | ✅ |
+| 3 412 | desconhecido (visto uma vez, durante comandos do app) | ⬜ |
 
 O qualificador segue o sentido do Contact-ID: no arme `3` = armou e `1` = desarmou;
 na zona `1` = disparou e `3` = restaurou; na PGM `1` = ligou e `3` = desligou.
 
-### 4.8 Recusa de comando — `f0 fd <código>`  ✅
-Quando a central **recusa** um comando (`40 1e`, `40 1f`, `45 af`, `40 1a`) ela
-responde `f0 fd <código>` ~0,1 s depois, em vez de executar (o status não muda).
-Códigos observados:
-- **`0x21`** — **comando sem sessão de controle válida**. Principal causa no nosso
-  caso: a sessão foi derrubada por um `f0 f1` (ver §3.5) e o comando caiu numa
-  sessão fechada. Prova (captura do relay): `f0 f1` em t=10,1 s (central ACK o
-  disconnect) → `40 1e` em t=13,1 s → `f0 fd 21`. A nuvem/app nunca manda `f0 f1`
-  entre abrir e comandar, então nunca vê `0x21`. O mesmo código aparece na PGM
-  (`45 af`) fora do modo "acesso via app" — ou seja, "sem permissão/sessão para
-  esta função". **Solução:** não mandar `f0 f1` e reabrir a sessão antes do comando.
-  Também é a resposta a **função não suportada/não habilitada**: PGM fora do modo
-  app, pânico fogo/médico no ELC (confirmado ao vivo).
-- **`0x3f`** — visto no bypass (`40 1f`) recusado.
-- **`0x00` NÃO é recusa** ✅ — é o ACK genérico ("ok, sem dados"): a central responde
-  `f0 fd 00` a bypass, choque, consultas (`38 5c`, `00 60`, `46 xx`) e à hora, e o
-  efeito acontece. (Versões antigas do relay tratavam como recusa e reenviavam.)
+### 4.8 Resposta `f0 fd <código>`  ✅
+Após um comando, a central pode responder `f0 fd <código>` em ~0,1 s:
 
-Um `f0 fd` de **keepalive** é diferente: o byte final é o checksum válido (xck), não
-um código. O relay loga `[RECUSADO] code 0xNN` só em recusa real (≠ `00`) e, para
-`40 1e`, confere o resultado no status.
+| Código | Significado |
+|---|---|
+| `00` | **ACK** genérico — o comando foi aceito (bypass, choque, consultas, hora) |
+| `21` | recusa: sem sessão de controle aberta (ex.: após `f0 f1`) ou função não permitida (PGM fora do modo app, pânico fogo/médico) |
+| `3f` | recusa observada no bypass |
+
+Em recusa o status não muda. Um `f0 fd` cujo último byte é o próprio checksum do frame
+é keepalive, não resposta a comando.
 
 ### 4.9 Desligar sirene — comando `40 19`  🟡
-Relay→central: `40 19` silencia a sirene sem desarmar (eng. reversa do APK,
-`bobaoapae`, ver §7). Ao vivo a central **aceitou** (sem recusa), mas sem alarme
-tocando não houve efeito a observar — falta testar com a sirene disparada.
+Servidor → central: `40 19` silencia a sirene sem desarmar (comando conhecido pelo app,
+§7). A central aceita o comando; o efeito com a sirene tocando não foi verificado.
 
 ---
 
 ## 5. Configuração — leitura/escrita de blocos  ✅
 
-A configuração **não é um protocolo à parte**: é leitura/escrita de blocos de
-memória, mesmo enquadramento.
+A configuração é lida e gravada em blocos de memória, com o mesmo enquadramento.
 
-- **Ler**: relay→central `3f 12 <addr:2> <tam:2>` → central responde com os dados.
+- **Ler**: servidor → central `3f 12 <addr:2> <tam:2>`; a central responde com os dados.
   Só endereço/tamanho de **início de bloco** devolvem dados próprios; outros
   endereços devolvem `f0 fd 00` ou **espelham** o bloco que os contém (endereços
   baixos → zonas, ≥ `04 00` → usuários). Os dados reais acabam em ~`05 a4`.
-- **Gravar**: relay→central `2f 12 <addr:2> <tam:2> <dados:tam>`.
+- **Gravar**: servidor → central `2f 12 <addr:2> <tam:2> <dados:tam>`.
 
-### Mapa de blocos (✅ confirmado por captura)
+### Mapa de blocos  ✅
 
 | Endereço | Tam | Conteúdo |
 |---|---|---|
@@ -336,9 +282,9 @@ memória, mesmo enquadramento.
 | `[14]` | reportagem em tempo real (`01`/`00`) |
 | `[8]`,`[12]` | PGM temporizada (segundos) — 🟡 a confirmar |
 
-### Gravar config (inclui **trocar a rede Wi-Fi**)  🟡
-Todo ajuste de config é um `2f 12 <addr> <tam> <dados>`. Observados em captura
-(estrutura confirmada; efeito ao vivo pelo relay ainda não testado):
+### Gravação  🟡
+Todo ajuste é um `2f 12 <addr> <tam> <dados>`. Formatos observados no tráfego do app
+(não executados pelo relay):
 
 | Operação | Escrita |
 |---|---|
@@ -353,50 +299,33 @@ Todo ajuste de config é um `2f 12 <addr> <tam> <dados>`. Observados em captura
 
 ---
 
-## 6. Outros opcodes observados (a confirmar)  🟡
+## 6. Outros opcodes  🟡
 
-Opcodes que aparecem no tráfego servidor→central (app pela nuvem) mas que **não são
-necessários** para o controle local e ainda **não foram mapeados a fundo**. Ficam
-aqui para completar o mapa. Todos na sessão de app (`00 00 00 0N`).
+Opcodes enviados pelo app que não são necessários para o controle local. Testados como
+consulta (nenhum aciona nada):
 
-| Opcode | Bytes (ex.) | Resposta observada | Provável |
+| Opcode | Exemplo | Resposta | Interpretação |
 |---|---|---|---|
-Testados ao vivo pelo relay (só leitura; nada acionou):
-
-| Opcode | Bytes (ex.) | Resposta ao vivo | Conclusão |
-|---|---|---|---|
-| `3f aa` | `3f aa 00` | **nenhuma** | este firmware não responde (o MAC já vem no status `[157..162]`) |
-| `38 5b` | `38 5b` | `38 5b 00` | consulta de flag/estado |
+| `3f aa` | `3f aa 00` | nenhuma | pedido de MAC; não suportado nesta versão (o MAC vem no status) |
+| `38 5b` | `38 5b` | `38 5b 00` | consulta de estado |
 | `38 5c` | `38 5c` | `f0 fd 00` + status | pede atualização de status |
-| `0b 01` | `0b 01` | nenhuma clara | inconclusivo |
+| `0b 01` | `0b 01` | — | inconclusivo |
 | `00 60` | `00 60` | `f0 fd 00` + status | pede atualização de status |
-| `46 10` | `46 10 ff` | status `0b 4a` | consulta/refresh — não aciona |
-| `46 a0` | `46 a0 ff <N>` (N=02/03/04/06) | status / `f0 fd 00` | consulta por partição — não aciona |
-
-> `0b 1a`, listado antes como "buffer de eventos", é quase certamente **falso
-> positivo**: `0b 1a` = "11/26" (mês/ano em binário) dentro dos timestamps de
-> status/eventos (`10 0b 1a hh mm ss` = 16/11/26 …), não um opcode.
+| `46 10` | `46 10 ff` | status | consulta |
+| `46 a0` | `46 a0 ff <N>` | status / `f0 fd 00` | consulta por partição |
 
 ---
 
-## 7. Validação cruzada e referências
+## 7. Referências
 
-Dois projetos independentes de engenharia reversa do mesmo ecossistema
-corroboram o mapeamento acima — úteis como conferência e para o que ainda falta:
+- **[rhacius/ha-elc6012net](https://github.com/rhacius/ha-elc6012net)** — mapeamento
+  do protocolo app ⇄ nuvem e integração via nuvem para o ELC 6012 NET; base deste
+  trabalho.
+- **[bobaoapae/guardian-api-intelbras](https://github.com/bobaoapae/guardian-api-intelbras)**
+  (MIT) — cliente da nuvem Intelbras a partir do app. Os opcodes coincidem (`40 1e`,
+  `0b 4a`, `40 1a`, `40 1f`, `45 af`, `f0 f0`, `40 19`), assim como o checksum
+  XOR^0xFF e os tipos de pânico.
 
-- **`bobaoapae/guardian-api-intelbras`** (MIT) — *cliente* da nuvem Intelbras
-  (OAuth + ISECNet) com integração Home Assistant. Da eng. reversa do APK, os
-  opcodes V2 batem com os nossos: `40 1e` arme, `0b 4a` status, `40 1a` pânico,
-  `40 1f` bypass, `45 af` PGM, `f0 f0` autorização, e o **checksum XOR^0xFF é o
-  mesmo**. Também confirma os **tipos de pânico** (§4.5) e traz comandos que
-  ainda não testamos no ELC (`40 19` desliga sirene, modos de arme). Ele é um
-  cliente que *disca para a nuvem*; não emula o servidor. O item "ISECNet local
-  (sem relay da nuvem)" é roadmap **em aberto** lá — ou seja, o relay/servidor
-  local deste projeto é justamente a peça que falta para controle 100% local.
-- **`rhacius/ha-elc6012net`** — base original do add-on de nuvem para o ELC 6012
-  NET (ver README e LICENSE).
-
-O que é específico deste projeto: o **lado servidor** — emular a nuvem para a
-central conectar localmente (enquadramento, abertura de sessão com código,
-keepalive, status 164B sem checksum, blocos de config) — validado byte a byte
-contra capturas reais do ELC 6012 NET (placa 1.1.0 / módulo 1.2.11).
+Este projeto documenta o **lado servidor**: o que a central espera da nuvem
+(enquadramento, abertura de sessão, keepalive, status sem checksum, blocos de
+configuração), verificado contra capturas do ELC 6012 NET.
