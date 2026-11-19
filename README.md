@@ -1,7 +1,13 @@
 # elc6012net-local
 
+[![CI](https://github.com/wesleycp4/elc6012net-local/actions/workflows/ci.yaml/badge.svg)](https://github.com/wesleycp4/elc6012net-local/actions/workflows/ci.yaml)
+![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-blue.svg)
+![Home Assistant App](https://img.shields.io/badge/Home%20Assistant-App-41BDF5.svg)
+
 Controle local, sem nuvem, do eletrificador **Intelbras ELC 6012 NET** — com
 integração ao Home Assistant e a documentação do protocolo.
+
+[![Adicionar o repositório ao Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fwesleycp4%2Felc6012net-local)
 
 > Projeto independente, sem vínculo com a Intelbras, feito por engenharia reversa do
 > próprio equipamento para fins de interoperabilidade. Ele controla uma cerca elétrica
@@ -31,10 +37,21 @@ O nome do servidor é fixo no firmware da central. Há duas formas de desviar a 
 ## Recursos
 
 - Arme/desarme do alarme e liga/desliga do choque, com confirmação pelo status
-- Zonas 1–8, disparo, bypass, sinal Wi-Fi e relógio da central
-- Eventos Contact-ID, histórico, pânico e PGM (pelo relay)
-- App do Home Assistant com descoberta automática das entidades
-- Funciona sem internet
+- Zonas 1–8, disparo e sinal Wi-Fi no Home Assistant (descoberta automática via MQTT)
+- Bypass, eventos Contact-ID, histórico, pânico e PGM pelo relay (ainda não viram
+  entidades)
+- Detecta queda da central e libera sozinho a sessão de controle presa
+- Sem nuvem; sem internet também, desde que o nome do servidor resolva na rede local
+  (ver [limitações](docs/instalacao.md#limitações))
+
+## Apps do Home Assistant
+
+| App | Estado | Para quê |
+|---|---|---|
+| [**ELC 6012 NET Local**](elc6012net_local) | estável | a central fala só com o Home Assistant |
+| [**ELC 6012 NET Híbrido**](elc6012net_hibrido) | ⚠️ não validado | tenta manter a nuvem e o app Intelbras junto com o controle local; nos testes o app oficial não reconectou |
+
+Os dois usam a porta 9009: rode um de cada vez.
 
 Estado detalhado de cada item: [docs/STATUS.md](docs/STATUS.md).
 
@@ -44,8 +61,8 @@ Guia completo em **[docs/instalacao.md](docs/instalacao.md)**. Resumo:
 
 1. Faça a central chegar no relay — pelo [firmware](docs/firmware.md) ou pela
    [rede](docs/instalacao.md#opção-b--redirecionamento-na-rede).
-2. No Home Assistant, adicione este repositório em *Configurações → Apps → Loja →
-   Repositórios*, instale **ELC 6012 NET Local** e ative *Iniciar no boot* e *Watchdog*.
+2. No Home Assistant, adicione este repositório (botão acima, ou *Configurações → Apps
+   → Loja → ⋮ → Repositórios*) e instale **ELC 6012 NET Local**.
 3. As entidades aparecem sozinhas — ver [docs/homeassistant.md](docs/homeassistant.md).
 
 Fora do Home Assistant, o relay roda como script Python: [relay/README.md](relay/README.md).
@@ -53,7 +70,9 @@ Fora do Home Assistant, o relay roda como script Python: [relay/README.md](relay
 ## Limitações
 
 - Enquanto a central estiver no relay, o **app e as notificações da Intelbras não
-  funcionam**. O modo híbrido, que tenta manter os dois, é experimental.
+  funcionam**. O modo híbrido, que tenta manter os dois, não foi validado.
+- Os Apps exigem Home Assistant OS ou Supervised. Em Home Assistant Container/Core,
+  rode o relay como script.
 - Com a central **desarmada**, a detecção de zona aberta é intermitente (como no app
   oficial).
 - O protocolo **não autentica o servidor**. Mantenha o relay acessível só pela LAN.
@@ -65,15 +84,18 @@ Fora do Home Assistant, o relay roda como script Python: [relay/README.md](relay
   bloqueia `*.pcap` e `*.bin`, e `tools/decode_capture.py` mascara os dados sensíveis.
 - Nunca exponha a porta 9009, o painel web do relay ou o broker MQTT à internet.
 
+Política completa e como relatar vulnerabilidades: [SECURITY.md](SECURITY.md).
+
 ## Estrutura
 
 | Caminho | Conteúdo |
 |---|---|
 | [`PROTOCOL.md`](PROTOCOL.md) | especificação do protocolo |
 | [`docs/`](docs) | [instalação](docs/instalacao.md), [Home Assistant](docs/homeassistant.md), [firmware](docs/firmware.md), [status](docs/STATUS.md) |
-| [`relay/`](relay) | relay local e ponte MQTT |
-| [`elc6012net_local/`](elc6012net_local), [`elc6012net_hibrido/`](elc6012net_hibrido) | Apps do Home Assistant |
+| [`relay/`](relay) | relay local e ponte MQTT (fonte do código) |
+| [`elc6012net_local/`](elc6012net_local), [`elc6012net_hibrido/`](elc6012net_hibrido) | Apps do Home Assistant (código copiado de `relay/` por [`scripts/sync_apps.py`](scripts/sync_apps.py)) |
 | [`tools/`](tools) | AP para captura, decodificador de capturas, proxy de observação, patch de firmware |
+| [`tests/`](tests) | testes do protocolo, da ponte MQTT e do relay contra uma central simulada |
 
 ## Contribuindo
 

@@ -41,6 +41,15 @@ sem nenhuma configuração no roteador. Se o IP do relay mudar, basta editar o D
 O nome resolve para um IP privado: nada fica acessível pela internet. **Não** aponte
 para um IP público com redirecionamento de porta — o relay não tem autenticação.
 
+**Internet na reconexão.** Com um domínio público, a central precisa resolver o nome a
+cada reconexão. Se a internet cair, a conexão aberta continua, mas uma reconexão nesse
+período só acontece quando a internet voltar. Para não depender disso:
+
+- crie também o nome no DNS local do roteador, se ele permitir; ou
+- grave o **IP do relay** no lugar do nome (`patch_server.py --novo 192.168.1.10`).
+  Dispensa DNS, mas exige IP fixo para o relay e uma nova gravação se ele mudar.
+  🟡 Ainda não testado no equipamento: guarde o backup para voltar ao nome.
+
 ### Opção B — redirecionamento na rede
 
 O nome `amt8000.intelbras.com.br` precisa resolver para o IP do relay (ou o tráfego
@@ -100,8 +109,8 @@ MQTT.
 1. *Configurações → Apps → Loja → ⋮ → Repositórios*: adicione
    `https://github.com/wesleycp4/elc6012net-local`.
 2. Instale **ELC 6012 NET Local** e inicie.
-3. Na aba *Informações*, ative **Iniciar no boot** e **Watchdog** — sem o relay, a
-   central fica sem servidor.
+3. Na aba *Informações*, confira **Iniciar no boot** e **Watchdog** ligados (padrão
+   desde a versão 1.1.0) — sem o relay, a central fica sem servidor.
 
 O App escuta na porta **9009** do host do HA e cria as entidades sozinho via MQTT
 Discovery (ver [homeassistant.md](homeassistant.md)). Rode **um** App por vez: o

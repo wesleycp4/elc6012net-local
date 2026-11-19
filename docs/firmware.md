@@ -95,7 +95,11 @@ confere a imagem antes e depois. Opções:
 | `--so-nacional` | troca só `amt8000…` (padrão: também `global.amt8000…`) |
 | `--bloquear-ota` | aponta o servidor de atualização para um endereço morto, para uma atualização da Intelbras não desfazer o patch (perde-se as atualizações oficiais) |
 
-Um IP literal também cabe, mas o firmware sempre faz consulta de DNS; prefira um nome.
+Um IP literal também cabe (`--novo 192.168.1.10`). Se o firmware usar o IP direto,
+sem consulta de DNS, a central deixa de depender de DNS e de internet para reconectar
+— mas isso **não foi testado**: a pilha de rede do ESP8266 costuma aceitar IP no lugar
+do nome, porém o caminho exato do firmware não foi verificado. Com um nome, a troca de
+IP do relay é só no DNS; com IP, exige nova gravação.
 
 ### 3. Apontar o DNS e regravar
 

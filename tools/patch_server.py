@@ -10,7 +10,10 @@ Opções:
   --bloquear-ota       aponta amtupdate + o IP fixo dele para endereço morto
                        (evita que uma atualização da Intelbras desfaça o patch)
 """
-import argparse, hashlib, struct, sys
+import argparse
+import hashlib
+import struct
+import sys
 
 HOSTS = [b"global.amt8000.intelbras.com.br", b"amt8000.intelbras.com.br"]
 OTA_HOST = b"amtupdate.intelbras.com.br"

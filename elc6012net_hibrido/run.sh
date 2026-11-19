@@ -8,7 +8,7 @@ fi
 export MQTT_PASSWORD
 MQTT_PASSWORD="$(bashio::services mqtt 'password')"
 
-bashio::log.warning "MODO HÍBRIDO (EXPERIMENTAL): repassando para a nuvem $(bashio::config 'upstream')"
+bashio::log.warning "Modo híbrido (não validado): repassando para a nuvem $(bashio::config 'upstream')"
 exec python3 -u /app/elc_local_relay.py \
     --listen 0.0.0.0:9009 --daemon \
     --upstream "$(bashio::config 'upstream')" \

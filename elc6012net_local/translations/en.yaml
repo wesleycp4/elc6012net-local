@@ -1,0 +1,12 @@
+configuration:
+  poll:
+    name: Poll interval
+    description: Seconds between status reads from the panel.
+  node:
+    name: Device ID
+    description: Identifier used in MQTT topics and entity IDs. Changing it creates new entities.
+  name:
+    name: Device name
+    description: Device name in Home Assistant.
+network:
+  9009/tcp: Panel connection (the panel connects here instead of the Intelbras cloud)

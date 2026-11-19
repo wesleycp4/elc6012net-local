@@ -1,0 +1,29 @@
+name: Dados de protocolo
+description: Contribuir com capturas decodificadas de outra central ou versão.
+labels: [protocolo]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Envie só a saída do `tools/decode_capture.py` (ela mascara SSID, senha e código).
+        Nunca o `.pcap` cru. Passo a passo em CONTRIBUTING.md.
+  - type: input
+    id: modelo
+    attributes:
+      label: Modelo e versões
+      placeholder: "ELC 6012 NET · placa 1.1.0 · módulo 1.2.11"
+    validations:
+      required: true
+  - type: textarea
+    id: acoes
+    attributes:
+      label: Ações feitas e horário de cada uma
+    validations:
+      required: true
+  - type: textarea
+    id: saida
+    attributes:
+      label: Saída do decode_capture.py
+      render: text
+    validations:
+      required: true

@@ -7,6 +7,7 @@ entidades aparecem sozinhas no Home Assistant via MQTT:
 - `alarm_control_panel` **Alarme** — armar / desarmar
 - `switch` **Cerca** — choque liga / desliga
 - `binary_sensor` **Disparo** e **Zona 1…8**
+- `sensor` **Sinal Wi-Fi** — dBm (diagnóstico)
 
 Projeto e documentação completa: https://github.com/wesleycp4/elc6012net-local
 
@@ -18,7 +19,7 @@ Projeto e documentação completa: https://github.com/wesleycp4/elc6012net-local
    https://github.com/wesleycp4/elc6012net-local/blob/main/docs/instalacao.md
 3. Pare outras integrações da central (ex.: o App de nuvem) e não rode junto com o
    App Híbrido — os dois usam a porta 9009.
-4. Ative **Iniciar no boot** e **Watchdog**: sem o App, a central fica sem servidor.
+4. Confira que **Iniciar no boot** e **Watchdog** estão ativos (padrão desde a 1.1.0): sem o App, a central fica sem servidor.
 
 ## Funcionamento
 
@@ -29,6 +30,9 @@ Projeto e documentação completa: https://github.com/wesleycp4/elc6012net-local
 - Com a central desarmada, a detecção de zona aberta é intermitente. Armada, a
   abertura gera disparo imediato.
 - A hora enviada à central usa o fuso do Home Assistant.
+- Depois de uma reconexão, a central pode manter presa a sessão anterior; o App
+  detecta (`f0 f0 01` no log) e libera sozinho. Se o log disser que continua sem
+  controle, desligue e religue a central.
 
 ## Opções
 

@@ -11,10 +11,11 @@ Instalação e o caminho até a central conectar: [instalacao.md](instalacao.md)
 | App | Uso | Estado |
 |---|---|---|
 | **ELC 6012 NET Local** | relay local, sem nuvem | estável |
-| **ELC 6012 NET Híbrido** | relay que também repassa para a nuvem Intelbras, tentando manter o app oficial | experimental |
+| **ELC 6012 NET Híbrido** | relay que também repassa para a nuvem Intelbras, tentando manter o app oficial | ⚠️ não validado |
 
 Os dois escutam na porta 9009: rode um por vez. As credenciais do MQTT vêm do App
-Mosquitto automaticamente.
+Mosquitto automaticamente. O App Local inicia no boot e o Supervisor reinicia o App se
+a porta 9009 parar de responder (watchdog).
 
 ### Opções
 
@@ -34,10 +35,11 @@ Com `name: ELC 6012 NET (local)`, os ids ficam com o prefixo `elc_6012_net_local
 
 | Entidade | Tipo | Comando |
 |---|---|---|
-| `alarm_control_panel.…_alarme` | alarme (partição 1) | armar / desarmar; estado `triggered` no disparo |
+| `alarm_control_panel.…_alarme` | alarme (partição 1) | armar (ausente) / desarmar; estado `triggered` no disparo. A central tem um só modo de arme |
 | `switch.…_cerca` | choque da cerca (partição 2) | liga / desliga |
 | `binary_sensor.…_disparo` | alguma zona disparada | — |
 | `binary_sensor.…_zona_1` … `_zona_8` | zona aberta | — |
+| `sensor.…_sinal_wi_fi` | sinal Wi-Fi da central, em dBm (diagnóstico) | — |
 
 A disponibilidade segue a conexão da central: com a central desconectada do relay, as
 entidades ficam indisponíveis. A queda é detectada por erro de conexão ou por 60 s sem
@@ -61,8 +63,8 @@ Base `elc6012/<node>`:
 | Tópico | Conteúdo |
 |---|---|
 | `…/availability` | `online` / `offline` |
-| `…/state` | JSON com `choque`, `alarme`, `disparo`, `zona1`…`zona8` |
-| `…/alarme/set` | `ARM_AWAY` / `DISARM` |
+| `…/state` | JSON com `choque`, `alarme`, `disparo`, `zona1`…`zona8`, `sinal` |
+| `…/alarme/set` | `ARM_AWAY` / `DISARM` (`ARM_HOME` e `ARM_NIGHT` também armam) |
 | `…/cerca/set` | `ON` / `OFF` |
 
 ## Dashboard de exemplo

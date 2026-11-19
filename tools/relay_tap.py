@@ -26,7 +26,9 @@ Reversível: pare o proxy e remova o override de DNS -> volta ao normal.
 Se o proxy cair, a central perde a nuvem até você remover o override,
 então faça isso com essa ciência.
 """
-import argparse, asyncio, sys
+import argparse
+import asyncio
+import sys
 from datetime import datetime
 
 

@@ -1,0 +1,48 @@
+name: Problema
+description: Algo não funciona como documentado.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        **Não cole** capturas `.pcap`, dumps de flash nem a configuração da central:
+        contêm a senha do Wi-Fi e o código de acesso.
+  - type: dropdown
+    id: modo
+    attributes:
+      label: Como roda o relay
+      options:
+        - App ELC 6012 NET Local
+        - App ELC 6012 NET Híbrido
+        - Relay avulso (script)
+    validations:
+      required: true
+  - type: input
+    id: versoes
+    attributes:
+      label: Versões
+      description: Versão do App/relay e versões da central (placa base e módulo, vistas no app Intelbras).
+      placeholder: "App 1.1.0 · placa 1.1.0 · módulo 1.2.11"
+    validations:
+      required: true
+  - type: dropdown
+    id: caminho
+    attributes:
+      label: Como a central chega no relay
+      options:
+        - Firmware alterado (opção A)
+        - DNS/NAT na rede (opção B)
+    validations:
+      required: true
+  - type: textarea
+    id: descricao
+    attributes:
+      label: O que aconteceu e o que era esperado
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log do App/relay
+      description: Trecho do log em volta do problema (o log não contém senhas).
+      render: text

@@ -17,7 +17,16 @@ Controle: Home Assistant via MQTT (--mqtt), painel web local (--web) ou stdin:
 Aciona uma cerca elétrica real. Enquanto a central estiver aqui, ela não fala com a
 nuvem Intelbras.
 """
-import argparse, builtins, json, os, signal, socket, struct, sys, threading, time
+import argparse
+import builtins
+import json
+import os
+import signal
+import socket
+import struct
+import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
 
@@ -69,15 +78,24 @@ def time_sync_payload() -> bytes:
                   bcd(n.year % 100), bcd(n.month), bcd(n.day),
                   wd, bcd(n.hour), bcd(n.minute), bcd(n.second)])
 
+def rssi_dbm(p: bytes):
+    """Sinal Wi-Fi da central (byte [163]) em dBm, ou None se ainda não medido (00)."""
+    if len(p) < 164 or p[163] == 0:
+        return None
+    sig = p[163]
+    return -((256 - sig) if sig > 127 else sig)
+
+
 def decode_status(p: bytes):
     if len(p) < 164: return f"(status curto: {len(p)}B)"
     choque = "ON" if p[30] & 1 else "off"
     alarme = "ON" if p[31] & 1 else "off"
     zonas  = p[46:48].hex()
     disp   = p[54:56].hex()
-    sig    = p[163]; sig = (256 - sig) if sig > 127 else sig
+    sig    = rssi_dbm(p)
+    sinal  = f"{sig}dBm" if sig is not None else "?"
     rel    = f"{p[72]:02d}/{p[73]:02d}/{p[74]:02d} {p[75]:02d}:{p[76]:02d}:{p[77]:02d}"
-    return f"choque={choque} alarme={alarme} zonas={zonas} disparo={disp} sinal=-{sig}dBm relogio={rel}"
+    return f"choque={choque} alarme={alarme} zonas={zonas} disparo={disp} sinal={sinal} relogio={rel}"
 
 # Abertura da sessão de controle (PROTOCOL §3). Payload fixo, igual ao usado pela
 # nuvem; libera status e comandos. A variante `f0 f0 01 <código> 10 00` abre uma
@@ -220,6 +238,7 @@ class Relay:
                 "choque": bool(frame[30] & 1), "alarme": bool(frame[31] & 1),
                 "zonas": frame[46:48].hex(), "disparo": frame[54:56].hex(),
                 "bypass": frame[62:64].hex(),
+                "sinal": rssi_dbm(frame),
                 "ts": datetime.now().strftime("%H:%M:%S")}
             if self.mqtt:
                 self.mqtt.publish_state(self.last_status)
@@ -703,7 +722,10 @@ def main():
             r.send(r.my_sid, bytes.fromhex("f0f1"), quiet=True)   # no híbrido, só a sessão injetada
             time.sleep(0.3)
         os._exit(0)
-    signal.signal(signal.SIGTERM, shutdown)
+    try:
+        signal.signal(signal.SIGTERM, shutdown)
+    except ValueError:                 # fora da thread principal (ex.: testes)
+        pass
 
     if ns.daemon:                      # serviço: sem stdin, só fica rodando
         threading.Event().wait()

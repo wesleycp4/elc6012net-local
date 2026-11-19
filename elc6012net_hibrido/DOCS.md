@@ -1,8 +1,8 @@
-# ELC 6012 NET Híbrido (experimental)
+# ELC 6012 NET Híbrido (não validado)
 
-> ⚠️ **Experimental.** O túnel com a nuvem e os comandos locais funcionam, mas nos
-> testes o app oficial da Intelbras não reconectou através do App. Para uso normal,
-> prefira o **ELC 6012 NET Local**.
+> ⚠️ **Não validado.** O túnel com a nuvem e os comandos locais funcionam, mas nos
+> testes o app oficial da Intelbras não reconectou através do App. Use por sua conta,
+> sabendo disso; para uso normal, prefira o **ELC 6012 NET Local**.
 
 O App fica entre a central e a nuvem Intelbras:
 

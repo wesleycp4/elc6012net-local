@@ -1,0 +1,15 @@
+configuration:
+  upstream:
+    name: Servidor da nuvem
+    description: IP e porta da nuvem Intelbras (use o IP, não o nome, para não cair no próprio redirecionamento).
+  inject_session:
+    name: Sessão dos comandos locais
+    description: Índice de sessão usado pelos comandos do Home Assistant. Use um índice que a nuvem não esteja usando.
+  node:
+    name: ID do dispositivo
+    description: Identificador usado nos tópicos MQTT e nos IDs das entidades.
+  name:
+    name: Nome do dispositivo
+    description: Nome do dispositivo no Home Assistant.
+network:
+  9009/tcp: Conexão da central (a central conecta aqui no lugar da nuvem Intelbras)

@@ -21,8 +21,16 @@ central da família) para validar os itens pendentes em [docs/STATUS.md](docs/ST
 
 ## Código
 
-- Python 3, só biblioteca padrão (exceto `paho-mqtt` na ponte MQTT).
+- Python 3.9+, só biblioteca padrão (exceto `paho-mqtt` na ponte MQTT).
+- `relay/` é a fonte do código. Depois de editar, copie para os Apps:
+  `python3 scripts/sync_apps.py` (o CI recusa cópias desatualizadas).
+- Antes do PR: `ruff check .` e `python3 -m unittest discover -s tests -t .`. Os
+  testes usam uma central simulada (`tests/_fake.py`); acrescente um caso quando
+  mudar o comportamento do relay.
 - Mudanças no protocolo devem vir acompanhadas da atualização do
   [PROTOCOL.md](PROTOCOL.md) e do [STATUS](docs/STATUS.md).
-- A branch `main` contém só o que foi validado no equipamento; trabalho experimental
-  vai para `experimental`.
+- Ao mudar um App, suba a `version` no `config.yaml` e registre no `CHANGELOG.md` do
+  App e no [CHANGELOG](CHANGELOG.md) do projeto. Sem isso o Home Assistant não oferece
+  a atualização.
+- Tudo fica na branch `main`. O que ainda não foi validado no equipamento é marcado
+  como tal na documentação (e o App Híbrido, como `stage: experimental`).

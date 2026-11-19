@@ -9,10 +9,12 @@ Entidades criadas:
   - alarm_panel "Alarme"  (armar/desarmar/disparo) -> 40 1e 01 01 / 00
   - binary_sensor "Disparo"
   - binary_sensor "Zona 1..8"
+  - sensor        "Sinal Wi-Fi" (dBm, diagnóstico)
 
 Requer `paho-mqtt` (pip install paho-mqtt).
 """
 import json
+import threading
 
 # comandos de controle (payload após a sessão) — mesmos bytes do relay
 CMD = {
@@ -109,11 +111,17 @@ class MqttBridge:
             "value_template": ("{{ 'triggered' if value_json.disparo else "
                                "('armed_away' if value_json.alarme else 'disarmed') }}"),
             "payload_arm_away": "ARM_AWAY", "payload_disarm": "DISARM",
+            # a central tem um só modo de arme: o HA mostra só "Armar ausente"
+            "supported_features": ["arm_away"],
             "code_arm_required": False, "code_disarm_required": False}))
         pub("binary_sensor", "disparo", self._ent("disparo", "Disparo", {
             "device_class": "safety",
             "value_template": "{{ 'ON' if value_json.disparo else 'OFF' }}",
             "payload_on": "ON", "payload_off": "OFF"}))
+        pub("sensor", "sinal", self._ent("sinal", "Sinal Wi-Fi", {
+            "device_class": "signal_strength", "unit_of_measurement": "dBm",
+            "state_class": "measurement", "entity_category": "diagnostic",
+            "value_template": "{{ value_json.sinal | default(none) }}"}))   # None => desconhecido
         for n in range(1, 9):
             pub("binary_sensor", f"zona{n}", self._ent(f"zona{n}", f"Zona {n}", {
                 "device_class": "door",
@@ -126,7 +134,7 @@ class MqttBridge:
         zoncol = int(st.get("zonas", "0000")[:2] or "0", 16)   # 1o byte = zonas 1..8
         disparo = int(st.get("disparo", "0000") or "0", 16) != 0
         out = {"choque": bool(st.get("choque")), "alarme": bool(st.get("alarme")),
-               "disparo": disparo}
+               "disparo": disparo, "sinal": st.get("sinal")}
         for n in range(1, 9):
             out[f"zona{n}"] = bool(zoncol >> (n - 1) & 1)
         return out
@@ -140,8 +148,7 @@ class MqttBridge:
             self.cli.publish(self.avail_t, "online" if online else "offline", qos=1, retain=True)
 
     def _ctrl(self, key):
-        # control() faz um sleep curto; dispara numa thread p/ não travar a rede do paho
-        import threading
+        # control() espera a central; dispara numa thread p/ não travar a rede do paho
         threading.Thread(target=self.relay.control, args=(CMD[key],), daemon=True).start()
 
     def _on_message(self, cli, userdata, msg):

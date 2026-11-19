@@ -3,6 +3,26 @@
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 Versões dos Apps do Home Assistant entre parênteses.
 
+## 2026-11-19 — App Local 1.1.0, App Híbrido 0.2.0
+
+### Alterado
+- Modo híbrido unificado na branch `main`, marcado como não validado
+  (`stage: experimental` no Supervisor). A branch `experimental` deixa de ser usada.
+- O código do relay passa a ir dentro de cada App (`<app>/app/`, copiado de `relay/`
+  por `scripts/sync_apps.py`). Antes o Dockerfile baixava o código da branch na hora
+  da montagem, então a versão do App não garantia o código instalado.
+- Alarme anuncia só "armar ausente" no HA (a central tem um único modo de arme).
+- App Local: inicia no boot e tem watchdog da porta 9009 por padrão.
+
+### Adicionado
+- Sensor **Sinal Wi-Fi** (dBm, diagnóstico).
+- Ícone, logo, README, CHANGELOG e traduções (pt-BR, en) das opções em cada App.
+- Testes automatizados (protocolo, ponte MQTT, relay contra central simulada) e CI
+  (ruff, testes, lint dos Apps, hadolint, shellcheck).
+- Modelos de issue, `SECURITY.md` e Dependabot para as GitHub Actions.
+- Documentação: gravar o IP no firmware para não depender de DNS/internet (🟡 não
+  testado).
+
 ## 2026-11-19 — App Local 1.0.4, App Híbrido 0.1.5
 
 ### Corrigido

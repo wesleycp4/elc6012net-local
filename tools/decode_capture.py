@@ -10,7 +10,9 @@ o código e a senha em texto claro. Protocolo: ver ../PROTOCOL.md.
 
 Uso:  python3 decode_capture.py captura.pcap [--port 9009]
 """
-import argparse, struct, sys
+import re
+import argparse
+import struct
 from datetime import datetime, timezone, timedelta
 
 TZ = timezone(timedelta(hours=-3))  # ajuste se precisar
@@ -22,7 +24,6 @@ BLOCKS = {  # addr -> (nome, sensivel?)
     "0400": ("usuarios(+codigo)", True),   # tem o código/PINs em claro -> sensível
 }
 
-import re
 def mask_digits(s):
     """Esconde sequências longas de dígitos (códigos/PINs) de qualquer preview."""
     return re.sub(r"\d{4,}", lambda m: "#" * len(m.group()), s)
@@ -81,7 +82,7 @@ def decode(path, port):
     # descobre os dois IPs do fluxo 9009
     peers = {}
     pkts = list(read_pcap(path))
-    for ts, pkt in pkts:
+    for _ts, pkt in pkts:
         r = tcp(pkt)
         if r and (r[1] == port or r[3] == port):
             peers[r[0]] = peers.get(r[0], 0) + 1
@@ -90,7 +91,7 @@ def decode(path, port):
     # o servidor (relay/nuvem) é quem ESCUTA na porta 9009 (funciona p/ nuvem e local,
     # onde os dois IPs são privados). src na 9009 = servidor; dst na 9009 = servidor.
     relay = None
-    for ts, pkt in pkts:
+    for _ts, pkt in pkts:
         r = tcp(pkt)
         if not r: continue
         if r[1] == port: relay = r[0]; break

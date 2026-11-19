@@ -1,0 +1,15 @@
+configuration:
+  upstream:
+    name: Cloud server
+    description: Intelbras cloud IP and port (use the IP, not the hostname, to avoid looping into your own redirect).
+  inject_session:
+    name: Local command session
+    description: Session index used for Home Assistant commands. Pick one the cloud is not using.
+  node:
+    name: Device ID
+    description: Identifier used in MQTT topics and entity IDs.
+  name:
+    name: Device name
+    description: Device name in Home Assistant.
+network:
+  9009/tcp: Panel connection (the panel connects here instead of the Intelbras cloud)

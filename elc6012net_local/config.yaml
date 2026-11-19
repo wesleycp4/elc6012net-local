@@ -1,14 +1,16 @@
 name: ELC 6012 NET Local
-version: "1.0.4"
+version: "1.1.0"
 slug: elc6012net_local
-description: Controle 100% local (sem nuvem) do eletrificador Intelbras ELC 6012 NET, com Home Assistant via MQTT
+description: Controle local (sem nuvem) do eletrificador Intelbras ELC 6012 NET, com Home Assistant via MQTT
 url: https://github.com/wesleycp4/elc6012net-local
 arch:
   - aarch64
   - amd64
 init: false
 startup: application
-boot: manual
+boot: auto
+# Supervisor reinicia o App se a porta da central parar de responder.
+watchdog: tcp://[HOST]:[PORT:9009]
 # Credenciais do broker vêm do Supervisor (App Mosquitto): nada a configurar.
 services:
   - mqtt:need
@@ -16,7 +18,7 @@ services:
 ports:
   9009/tcp: 9009
 ports_description:
-  9009/tcp: Conexão da central (redirecione o servidor da nuvem para o IP do HA)
+  9009/tcp: Conexão da central (ver docs/instalacao.md)
 options:
   poll: 5
   node: elc6012_local

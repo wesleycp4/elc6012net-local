@@ -29,8 +29,13 @@ python3 elc_local_relay.py --listen 0.0.0.0:9009 --poll 5 --tz America/Sao_Paulo
 | `--mqtt-node` | `elc6012net` | id do dispositivo no HA |
 | `--mqtt-name` | `Intelbras ELC 6012 NET` | nome do dispositivo no HA |
 | `--daemon` | — | sem terminal interativo (serviço) |
+| `--upstream HOST[:PORTA]` | desligado | modo híbrido (ver abaixo) |
+| `--inject-session N` | `2` | sessão dos comandos locais no modo híbrido |
+| `--session-hex HEX` | payload padrão | abertura de sessão alternativa (diagnóstico) |
 
-`--code` e `--keepalive` existem só por compatibilidade e são ignorados.
+`--code` e `--keepalive` existem só por compatibilidade e são ignorados. Ao receber
+`SIGTERM` (parada do serviço/App), o relay encerra a sessão de controle (`f0 f1`) antes
+de sair, para não deixá-la presa na central.
 
 ## Comandos
 
@@ -55,12 +60,20 @@ confirmação e só escuta em `127.0.0.1`.
 
 ## Log
 
-O status é impresso só quando muda. Recusas da central aparecem como
-`[RECUSADO] code 0xNN` (`0x21` = função não permitida); o relay reabre a sessão e
-reenvia até duas vezes. Para arme/desarme/choque, o resultado é conferido no status
-(`[OK] … confirmado pelo status`).
+Cada linha começa com o horário. O status é impresso só quando muda.
 
-## Modo híbrido (experimental)
+| Mensagem | Significado |
+|---|---|
+| `== central conectou de …` / `[SESSAO] aberta` | central conectada e sessão de controle liberada |
+| `[SESSAO] central respondeu código 0x01` | sessão anterior presa na central; o relay encerra (`f0 f1`) e reabre sozinho |
+| `[SESSAO] reaberta com controle liberado` | a liberação funcionou |
+| `[SESSAO] continua sem controle…` | não liberou: desligue e religue a central |
+| `[OK] … confirmado pelo status` | arme/desarme/choque aplicado |
+| `[=] …: já está nesse estado` | comando não enviado, a central já estava no estado pedido |
+| `[RECUSADO] … code 0xNN (frame)` | recusa da central (`0x21` = sem sessão de controle ou função não permitida). Arme/desarme/choque são conferidos pelo status e reenviados até 2×; os demais comandos são reenviados até 2× reabrindo a sessão |
+| `[!] central desconectou (motivo)` | erro de conexão ou 60 s sem dados; o HA marca as entidades como indisponíveis até a central reconectar |
+
+## Modo híbrido (não validado)
 
 Com `--upstream <host:porta>`, o relay repassa o tráfego da central para a nuvem
 Intelbras e injeta os comandos locais numa sessão própria (`--inject-session`, padrão

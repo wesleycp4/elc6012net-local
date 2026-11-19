@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentação
+    url: https://github.com/wesleycp4/elc6012net-local/blob/main/docs/instalacao.md
+    about: Instalação, firmware e limitações conhecidas.

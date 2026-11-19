@@ -1,8 +1,9 @@
-name: ELC 6012 NET Híbrido (experimental)
-version: "0.1.5"
+name: ELC 6012 NET Híbrido
+version: "0.2.0"
 slug: elc6012net_hibrido
-description: "[EXPERIMENTAL] Proxy: mantém a nuvem/app Intelbras funcionando e injeta comandos locais pelo Home Assistant"
+description: "Não validado: repassa a central para a nuvem Intelbras e injeta comandos locais do Home Assistant"
 url: https://github.com/wesleycp4/elc6012net-local
+stage: experimental
 arch:
   - aarch64
   - amd64
@@ -14,7 +15,7 @@ services:
 ports:
   9009/tcp: 9009
 ports_description:
-  9009/tcp: Conexão da central (redirecione o servidor da nuvem para o IP do HA)
+  9009/tcp: Conexão da central (ver docs/instalacao.md)
 options:
   upstream: "52.67.212.35:9009"
   inject_session: 2

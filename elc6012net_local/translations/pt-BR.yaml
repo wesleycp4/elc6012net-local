@@ -1,0 +1,12 @@
+configuration:
+  poll:
+    name: Intervalo de leitura
+    description: Segundos entre leituras do status da central.
+  node:
+    name: ID do dispositivo
+    description: Identificador usado nos tópicos MQTT e nos IDs das entidades. Mudar cria entidades novas.
+  name:
+    name: Nome do dispositivo
+    description: Nome do dispositivo no Home Assistant.
+network:
+  9009/tcp: Conexão da central (a central conecta aqui no lugar da nuvem Intelbras)
