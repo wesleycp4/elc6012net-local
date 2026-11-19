@@ -3,12 +3,20 @@
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 Versões dos Apps do Home Assistant entre parênteses.
 
+## 2026-11-19 — App Local 1.0.4, App Híbrido 0.1.5
+
+### Corrigido
+- **Causa real da recusa `0x21`** (choque não ligava pelo HA): depois de uma reconexão
+  sem a central reiniciar, a resposta da abertura de sessão vinha `f0 f0 01` — a
+  sessão da conexão anterior ficava presa e a nova só lia status. Agora o relay
+  encerra a sessão com `f0 f1` ao parar e, ao receber código diferente de `00`,
+  encerra e reabre a sessão uma vez por conexão.
+
 ## 2026-11-19 — App Local 1.0.3, App Híbrido 0.1.4
 
 ### Corrigido
 - O comando passa a ser enviado só depois de a central confirmar a reabertura da
-  sessão (`f0 f0`), com até 3 s de espera, em vez de uma pausa fixa de 150 ms. Com
-  sinal Wi-Fi fraco, o comando chegava antes da sessão e era recusado com `0x21`.
+  sessão (`f0 f0`), com até 3 s de espera, em vez de uma pausa fixa de 150 ms.
 
 ### Adicionado
 - Log do frame bruto nas recusas e do código de resposta da abertura de sessão.

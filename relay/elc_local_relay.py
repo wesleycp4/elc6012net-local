@@ -17,7 +17,7 @@ Controle: Home Assistant via MQTT (--mqtt), painel web local (--web) ou stdin:
 Aciona uma cerca elétrica real. Enquanto a central estiver aqui, ela não fala com a
 nuvem Intelbras.
 """
-import argparse, builtins, json, os, socket, struct, sys, threading, time
+import argparse, builtins, json, os, signal, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
 
@@ -116,6 +116,8 @@ class Relay:
         self.session_open = bytes.fromhex(SESSION_OPEN_HEX)
         self.session_opened = False
         self._sess_ack = threading.Event()   # setado quando a central confirma o f0f0
+        self._sess_code = None          # último código da resposta f0 f0 (0 = controle liberado)
+        self._sess_reset_done = False   # já tentou f0f1+f0f0 nesta conexão
         self.SID = b"\x00\x00\x00\x01"  # índice de sessão deste relay
         self._pending_cmd = None        # (opcode, ts, retry) do comando, p/ detectar NACK
         self._last_control = None       # último payload de controle, p/ reenviar numa recusa
@@ -222,11 +224,26 @@ class Relay:
             self.send(b"\x00\x00\x00\x00", time_sync_payload())
             self.open_session()
         elif c == "f0f0":                    # confirmação de sessão (resposta da central)
-            if len(frame) >= 9 and frame[8] != 0x00:
-                print(f"[SESSAO] resposta com código 0x{frame[8]:02x}: {frame.hex(' ')}")
+            code = frame[8] if len(frame) >= 9 else 0
+            self._sess_code = code
             self._sess_ack.set()
+            if code != 0x00:
+                # Visto: 0x01 depois de uma reconexão sem a central reiniciar — a sessão
+                # da conexão anterior continua presa na central e a nova só lê status
+                # (comandos voltam 0x21). Encerra (f0 f1) e reabre, uma vez por conexão.
+                print(f"[SESSAO] central respondeu código 0x{code:02x} (sem controle): {frame.hex(' ')}")
+                if not self._sess_reset_done:
+                    self._sess_reset_done = True
+                    threading.Thread(target=self.reset_session, args=(self.sock,), daemon=True).start()
+                elif not self.session_opened:
+                    print("[SESSAO] continua sem controle após reiniciar a sessão: status funciona, "
+                          "comandos serão recusados. Religar a central libera.")
+            elif self._sess_reset_done and not getattr(self, "_reset_ok_logged", False):
+                self._reset_ok_logged = True
+                print("[SESSAO] reaberta com controle liberado (código 0x00)")
             if not self.session_opened:      # só avisa na 1ª abertura (reaberturas por comando ficam quietas)
-                print("[SESSAO] aberta -> status e comandos liberados")
+                print("[SESSAO] aberta -> status e comandos liberados" if code == 0
+                      else "[SESSAO] aberta só para leitura")
             self.session_opened = True
         else:
             print(f"[??] {frame.hex(' ')} -> ack")
@@ -315,6 +332,19 @@ class Relay:
             ts = f"{r[9]:02d}/{r[10]:02d}/{r[11]:02d} {r[12]:02d}:{r[13]:02d}:{r[14]:02d}"
             print(f"[HIST] {ts}  codigo={r[0:9].hex()}")
 
+    def reset_session(self, conn):
+        """Encerra a sessão de controle presa (f0 f1) e abre de novo (f0 f0)."""
+        print("[SESSAO] encerrando a sessão anterior (f0 f1) e reabrindo...")
+        with self._ctrl_lock:
+            if self.sock is not conn or not self.send(self.SID, bytes.fromhex("f0f1")):
+                return
+            time.sleep(3.0)                 # a central fecha a sessão ~2 s após o f0 f1
+            if self.sock is not conn:
+                return
+            self._sess_ack.clear()
+            self.send(self.SID, self.session_open, quiet=True)
+            self._sess_ack.wait(SESSION_ACK_TIMEOUT)
+
     def open_session(self):
         """Abre a sessão de CONTROLE (f0 f0 03 03 06 05 09 00 00 00 01, fixa).
         Autoriza status E comandos. Não leva o código: a central não autentica
@@ -363,7 +393,10 @@ class Relay:
             # espera a central confirmar a reabertura (f0 f0) antes do comando: com sinal
             # Wi-Fi fraco a confirmação pode passar de 150 ms e o comando cai em 0x21.
             t0 = time.time()
-            if self._sess_ack.wait(SESSION_ACK_TIMEOUT):
+            acked = self._sess_ack.wait(SESSION_ACK_TIMEOUT)
+            if acked and self._sess_code not in (None, 0):
+                print(f"[!] sessão sem controle (código 0x{self._sess_code:02x}): o comando deve ser recusado")
+            if acked:
                 if time.time() - t0 > 0.5:
                     print(f"[SESSAO] reabertura confirmada em {time.time() - t0:.1f}s")
                 time.sleep(0.05)
@@ -498,6 +531,9 @@ def main():
                 r.session_opened = False
                 r._last_status_key = None
                 r._pending_cmd = None
+                r._sess_code = None
+                r._sess_reset_done = False
+                r._reset_ok_logged = False
             if old:
                 try: old.close()
                 except OSError: pass
@@ -505,6 +541,16 @@ def main():
             threading.Thread(target=r.reader, args=(conn,), daemon=True).start()
             threading.Thread(target=r.poller, args=(conn, ns.poll), daemon=True).start()
     threading.Thread(target=accept_loop, daemon=True).start()
+
+    def shutdown(*_):
+        # encerra a sessão de controle ao parar: sem isso ela fica presa na central e a
+        # próxima conexão recebe sessão só de leitura (código 0x01)
+        if r.sock and r.session_opened:
+            print("[SESSAO] encerrando a sessão (f0 f1) antes de sair")
+            r.send(r.SID, bytes.fromhex("f0f1"), quiet=True)
+            time.sleep(0.3)
+        os._exit(0)
+    signal.signal(signal.SIGTERM, shutdown)
 
     if ns.daemon:                      # serviço: sem stdin, só fica rodando
         threading.Event().wait()

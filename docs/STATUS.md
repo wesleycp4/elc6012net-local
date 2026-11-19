@@ -57,7 +57,9 @@ Testado em: ELC 6012 NET, placa base 1.1.0, módulo Wi-Fi 1.2.11.
 Itens em aberto, por prioridade. Como contribuir: [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 1. **Modo híbrido** — descobrir por que o app oficial não reconecta pelo proxy. Requer
-   capturar também o lado da nuvem.
+   capturar também o lado da nuvem. Hipótese: sessão presa na central (ver
+   [PROTOCOL §3](../PROTOCOL.md), resposta `f0 f0 01`), já que a nuvem recusa login
+   com "outra sessão ativa".
 2. **Bateria e rede elétrica** — capturar os eventos de falta de energia e bateria
    baixa e expô-los no HA.
 3. **Entidades extras no HA** — bypass por zona, último evento, PGM.
