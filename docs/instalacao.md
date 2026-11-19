@@ -109,8 +109,9 @@ MQTT.
 1. *Configurações → Apps → Loja → ⋮ → Repositórios*: adicione
    `https://github.com/wesleycp4/elc6012net-local`.
 2. Instale **ELC 6012 NET Local** e inicie.
-3. Na aba *Informações*, confira **Iniciar no boot** e **Watchdog** ligados (padrão
-   desde a versão 1.1.0) — sem o relay, a central fica sem servidor.
+3. Na aba *Informações*, confira **Iniciar no boot** ligado (padrão desde a versão
+   1.1.0) e ligue o **Watchdog**, que reinicia o App se ele parar — sem o relay, a
+   central fica sem servidor.
 
 O App escuta na porta **9009** do host do HA e cria as entidades sozinho via MQTT
 Discovery (ver [homeassistant.md](homeassistant.md)). Rode **um** App por vez: o

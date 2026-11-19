@@ -7,8 +7,6 @@ arch:
   - aarch64
   - amd64
 init: false
-# Supervisor reinicia o App se a porta da central parar de responder.
-watchdog: tcp://[HOST]:[PORT:9009]
 # Credenciais do broker vêm do Supervisor (App Mosquitto): nada a configurar.
 services:
   - mqtt:need

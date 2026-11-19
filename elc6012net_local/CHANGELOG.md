@@ -6,7 +6,7 @@
   montagem; agora cada versão do App corresponde a um código fixo).
 - Novo sensor **Sinal Wi-Fi** (dBm, diagnóstico).
 - Alarme mostra só **Armar** (ausente): a central tem um único modo de arme.
-- Inicia no boot por padrão e o Supervisor vigia a porta 9009 (watchdog).
+- Inicia no boot por padrão.
 - Ícone, logo e traduções das opções.
 
 ## 1.0.4

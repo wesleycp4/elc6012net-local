@@ -12,7 +12,7 @@ Versões dos Apps do Home Assistant entre parênteses.
   por `scripts/sync_apps.py`). Antes o Dockerfile baixava o código da branch na hora
   da montagem, então a versão do App não garantia o código instalado.
 - Alarme anuncia só "armar ausente" no HA (a central tem um único modo de arme).
-- App Local: inicia no boot e tem watchdog da porta 9009 por padrão.
+- App Local: inicia no boot por padrão.
 
 ### Adicionado
 - Sensor **Sinal Wi-Fi** (dBm, diagnóstico).

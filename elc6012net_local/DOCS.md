@@ -19,7 +19,8 @@ Projeto e documentação completa: https://github.com/wesleycp4/elc6012net-local
    https://github.com/wesleycp4/elc6012net-local/blob/main/docs/instalacao.md
 3. Pare outras integrações da central (ex.: o App de nuvem) e não rode junto com o
    App Híbrido — os dois usam a porta 9009.
-4. Confira que **Iniciar no boot** e **Watchdog** estão ativos (padrão desde a 1.1.0): sem o App, a central fica sem servidor.
+4. Confira **Iniciar no boot** ligado (padrão desde a 1.1.0) e ligue o **Watchdog**,
+   que reinicia o App se ele parar: sem o App, a central fica sem servidor.
 
 ## Funcionamento
 

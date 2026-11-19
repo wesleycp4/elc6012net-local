@@ -14,8 +14,8 @@ Instalação e o caminho até a central conectar: [instalacao.md](instalacao.md)
 | **ELC 6012 NET Híbrido** | relay que também repassa para a nuvem Intelbras, tentando manter o app oficial | ⚠️ não validado |
 
 Os dois escutam na porta 9009: rode um por vez. As credenciais do MQTT vêm do App
-Mosquitto automaticamente. O App Local inicia no boot e o Supervisor reinicia o App se
-a porta 9009 parar de responder (watchdog).
+Mosquitto automaticamente. O App Local inicia no boot; ligue também o **Watchdog** (aba
+*Informações*) para o Supervisor reiniciar o App se ele parar.
 
 ### Opções
 
