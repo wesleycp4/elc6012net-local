@@ -107,14 +107,23 @@ Sequência ao conectar ✅:
    com `f0 f0 00 <ck>` na sessão `00 0N 00 00`. Sem essa abertura, a central ignora
    leituras e comandos.
 
+   O byte após `f0 f0` na resposta é o resultado: `00` = controle liberado. Com `01`,
+   o status funciona mas todo comando é recusado com `0x21` ✅. Isso acontece quando a
+   central reconecta **sem reiniciar** e a sessão da conexão anterior não foi encerrada
+   (o relay caiu, a conexão foi resetada): a sessão antiga continua presa. Encerrar com
+   `f0 f1` na mesma sessão e reabrir com `f0 f0` devolve `00` 🟡. Por isso o relay
+   encerra a sessão (`f0 f1`) ao parar e, se receber código diferente de `00`, faz
+   `f0 f1` + `f0 f0` uma vez por conexão.
+
    A abertura não leva o código de acesso (ele fica no bloco de usuários `04 00`, §5).
    A variante `f0 f0 01 <dígitos> 10 00` abre uma sessão **somente leitura**: status
    funciona, comandos recebem recusa (`f0 fd`).
 5. **Manutenção** — a sessão se mantém com o keepalive da central (`f0 f7` → `f0 fe`)
    e com as leituras de status. **`f0 f1` encerra a sessão** (não é keepalive):
-   depois dele, comandos recebem recusa `0x21` até uma nova abertura. A prática segura
-   é nunca enviar `f0 f1` e reabrir a sessão (`f0 f0`) antes de cada comando, como faz
-   o app.
+   depois dele, comandos recebem recusa `0x21` até uma nova abertura. Durante o uso,
+   não envie `f0 f1`; reabra a sessão (`f0 f0`) antes de cada comando, como faz o app,
+   e espere a confirmação antes de mandar o comando. Envie `f0 f1` só para encerrar
+   (ao parar o servidor) ou para liberar uma sessão presa (item 4).
 
 ---
 
