@@ -60,8 +60,18 @@ O status é impresso só quando muda. Recusas da central aparecem como
 reenvia até duas vezes. Para arme/desarme/choque, o resultado é conferido no status
 (`[OK] … confirmado pelo status`).
 
-## Modo híbrido (experimental, branch `experimental`)
+## Modo híbrido (experimental)
 
 Com `--upstream <host:porta>`, o relay repassa o tráfego da central para a nuvem
-Intelbras e injeta os comandos locais numa sessão própria (`--inject-session`).
-O app oficial não reconectou nos testes — ver [STATUS](../docs/STATUS.md).
+Intelbras e injeta os comandos locais numa sessão própria (`--inject-session`, padrão
+`2`). Os frames dessa sessão não são repassados à nuvem. Se a internet cair, o
+controle local continua e o túnel é refeito quando ela volta.
+
+```bash
+python3 elc_local_relay.py --listen 0.0.0.0:9009 --upstream 52.67.212.35:9009 \
+    --inject-session 2 --mqtt <broker>:1883
+```
+
+Use o IP da nuvem em `--upstream`, não o nome, para não cair no próprio
+redirecionamento. O app oficial não reconectou nos testes — ver
+[STATUS](../docs/STATUS.md).
