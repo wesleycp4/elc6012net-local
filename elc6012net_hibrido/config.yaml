@@ -8,7 +8,6 @@ arch:
   - aarch64
   - amd64
 init: false
-startup: application
 boot: manual
 services:
   - mqtt:need

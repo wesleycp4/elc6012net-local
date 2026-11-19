@@ -21,7 +21,7 @@ central da família) para validar os itens pendentes em [docs/STATUS.md](docs/ST
 
 ## Código
 
-- Python 3.9+, só biblioteca padrão (exceto `paho-mqtt` na ponte MQTT).
+- Python 3.11+, só biblioteca padrão (exceto `paho-mqtt` na ponte MQTT).
 - `relay/` é a fonte do código. Depois de editar, copie para os Apps:
   `python3 scripts/sync_apps.py` (o CI recusa cópias desatualizadas).
 - Antes do PR: `ruff check .` e `python3 -m unittest discover -s tests -t .`. Os

@@ -8,7 +8,7 @@ documento cobre o uso avulso.
 
 ## Requisitos
 
-- Python 3.9+
+- Python 3.11+
 - `paho-mqtt` — só para a integração MQTT (`pip install -r requirements.txt`)
 - A central redirecionada para esta máquina ([instalação, etapa 1](../docs/instalacao.md#etapa-1--fazer-a-central-chegar-no-relay))
 
