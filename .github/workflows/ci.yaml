@@ -39,7 +39,7 @@ jobs:
         with:
           path: "./${{ matrix.app }}"
       - name: Lint do Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.5.0
         with:
           dockerfile: "${{ matrix.app }}/Dockerfile"
           ignore: DL3006,DL3013,DL3018
