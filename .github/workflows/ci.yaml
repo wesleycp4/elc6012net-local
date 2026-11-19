@@ -15,8 +15,8 @@ jobs:
       matrix:
         python: ["3.11", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - run: pip install ruff "paho-mqtt>=2.1,<3"
@@ -33,13 +33,13 @@ jobs:
       matrix:
         app: [elc6012net_local, elc6012net_hibrido]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Lint do App (Home Assistant)
         uses: frenck/action-addon-linter@v2
         with:
           path: "./${{ matrix.app }}"
       - name: Lint do Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.5.0
         with:
           dockerfile: "${{ matrix.app }}/Dockerfile"
           ignore: DL3006,DL3013,DL3018
