@@ -71,6 +71,7 @@ Cada linha começa com o horário. O status é impresso só quando muda.
 | `[OK] … confirmado pelo status` | arme/desarme/choque aplicado |
 | `[=] …: já está nesse estado` | comando não enviado, a central já estava no estado pedido |
 | `[RECUSADO] … code 0xNN (frame)` | recusa da central (`0x21` = sem sessão de controle ou função não permitida). Arme/desarme/choque são conferidos pelo status e reenviados até 2×; os demais comandos são reenviados até 2× reabrindo a sessão |
+| `[i] conexão de … ignorada` | algo conectou na porta sem falar o protocolo (varredura, verificação); a conexão da central não é afetada |
 | `[!] central desconectou (motivo)` | erro de conexão ou 60 s sem dados; o HA marca as entidades como indisponíveis até a central reconectar |
 
 ## Modo híbrido (não validado)

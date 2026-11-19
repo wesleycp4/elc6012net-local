@@ -1,5 +1,5 @@
 name: ELC 6012 NET Híbrido
-version: "0.2.0"
+version: "0.2.1"
 slug: elc6012net_hibrido
 description: "Não validado: repassa a central para a nuvem Intelbras e injeta comandos locais do Home Assistant"
 url: https://github.com/wesleycp4/elc6012net-local

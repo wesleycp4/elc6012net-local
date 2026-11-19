@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1
+
+- Uma conexão nova na porta 9009 só substitui a da central depois de mandar um frame
+  válido do protocolo. Antes, qualquer conexão (verificação de saúde, varredura de
+  rede) derrubava a central.
+- Removida a verificação de porta do watchdog adicionada na 1.1.0: ela abria
+  conexões na 9009 e derrubava a central a cada verificação.
+
 ## 1.1.0
 
 - Código do relay incluído no App (antes era baixado da branch `main` na hora da

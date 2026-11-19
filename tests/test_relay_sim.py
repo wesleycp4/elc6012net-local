@@ -65,7 +65,20 @@ class RelaySimTest(unittest.TestCase):
         c.reset()
         self.assertTrue(wait_for(lambda: self.r.sock is None))
 
-    def test_3_idle_connection_dropped(self):
+    def test_3_probe_does_not_kick_central(self):
+        m.HANDSHAKE_TIMEOUT = 1.0
+        c = self.connect()
+        central_sock = self.r.sock
+        silent = socket.create_connection(("127.0.0.1", self.port))     # verificação de saúde
+        http = socket.create_connection(("127.0.0.1", self.port))
+        http.sendall(b"GET / HTTP/1.0\r\n\r\n")                       # varredura/curioso
+        time.sleep(2.0)
+        self.assertIs(self.r.sock, central_sock)
+        silent.close(); http.close()
+        c.reset()
+        self.assertTrue(wait_for(lambda: self.r.sock is None))
+
+    def test_4_idle_connection_dropped(self):
         c = self.connect()
         c.answer_status = False                          # central "some" sem fechar
         self.assertTrue(wait_for(lambda: self.r.sock is None, timeout=10))

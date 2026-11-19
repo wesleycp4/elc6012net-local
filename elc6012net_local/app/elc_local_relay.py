@@ -108,6 +108,27 @@ RX_CMDS = {b"\x0b\x4a", b"\xf0\xfd", b"\xf0\xfe", b"\xf0\xf0", b"\xf0\xf7",
            b"\x40\x1e", b"\x40\x1f", b"\x40\x1a", b"\x45\xaf",
            b"\x2f\x12", b"\x3f\x12"}
 
+HANDSHAKE_TIMEOUT = 10.0   # s para uma conexão nova mandar o primeiro frame
+
+
+def first_frame(conn):
+    """Lê da conexão nova até achar um cabeçalho válido do protocolo da central.
+    Devolve os bytes lidos (para o leitor processar) ou None se não for a central."""
+    data = b""
+    try:
+        conn.settimeout(HANDSHAKE_TIMEOUT)
+        while len(data) < 4096:
+            chunk = conn.recv(4096)
+            if not chunk:
+                return None
+            data += chunk
+            if any(valid_header(data[i:i + 8]) for i in range(0, len(data) - 7)):
+                return data
+    except OSError:
+        return None
+    return None
+
+
 def valid_header(b: bytes) -> bool:
     """Cabeçalho plausível: sessão `00 0N 00 00` + comando conhecido."""
     return (len(b) >= 8 and b[0] == 0 and b[2] == 0 and b[3] == 0
@@ -359,12 +380,13 @@ class Relay:
             print(f"[!] {payload.hex()} não refletiu no status após retentativas "
                   f"(zona aberta impede armar? central ocupada?)")
 
-    def reader(self, conn):
+    def reader(self, conn, initial: bytes = b""):
         # Atado à conexão: sai se outra conexão assumir (a central reconecta no churn de WiFi).
         reason = "conexão fechada pela central"
+        pending = initial                   # bytes já lidos na identificação da conexão
         while self.sock is conn:
             try:
-                data = conn.recv(4096)
+                data, pending = (pending, b"") if pending else (conn.recv(4096), b"")
             except socket.timeout:
                 reason = f"sem dados há {conn.gettimeout():.0f}s"
                 break
@@ -509,12 +531,13 @@ class Relay:
         self.fwd_buf = b[i:]
         return bytes(out)
 
-    def proxy_c2u(self, conn, up):
+    def proxy_c2u(self, conn, up, initial: bytes = b""):
         """central -> nuvem: encaminha (menos a nossa sessão) e TAPeia p/ o HA."""
         reason = "conexão fechada pela central"
+        pending = initial
         while self.sock is conn:
             try:
-                data = conn.recv(4096)
+                data, pending = (pending, b"") if pending else (conn.recv(4096), b"")
             except OSError as e:
                 reason = f"erro de conexão: {e.__class__.__name__}"
                 break
@@ -672,46 +695,61 @@ def main():
           "panic [0-3] sirenoff | pgm <1|2> <on|off> | bypass <8 digitos> | "
           "events | raw <hex> | quit")
 
+    def identify(conn, addr):
+        """Só promove a conexão a "central" depois do primeiro frame válido. Sem isso,
+        qualquer conexão na porta (varredura de rede, verificação de saúde) derrubava a
+        conexão da central."""
+        initial = first_frame(conn)
+        if initial is None:
+            print(f"[i] conexão de {addr[0]} ignorada: não falou o protocolo da central")
+            try: conn.close()
+            except OSError: pass
+            return
+        promote(conn, addr, initial)
+
+    def promote(conn, addr, initial):
+        print(f"== central conectou de {addr}")
+        # no híbrido quem consulta é a nuvem: sem timeout de ociosidade
+        conn.settimeout(None if r.proxy else max(IDLE_TIMEOUT_MIN, 4 * ns.poll))
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        # reset de estado por conexão (a central reconecta sozinha no churn de WiFi):
+        # sem isso, buf/sessão/threads antigas vazam e dessincronizam.
+        with r.lock:
+            old, oldup = r.sock, r.up
+            r.sock = conn
+            r.buf = b""; r.tap_buf = b""; r.fwd_buf = b""
+            r.session_opened = False
+            r._last_status_key = None
+            r._pending_cmd = None
+            r.up = None
+            r._sess_code = None
+            r._sess_reset_done = False
+            r._reset_ok_logged = False
+        for s in (old, oldup):
+            if s:
+                try: s.close()
+                except OSError: pass
+        if r.mqtt: r.mqtt.set_available(True)
+        if r.proxy:
+            # abre a conexão com a nuvem real e vira um túnel central<->nuvem,
+            # tapeando o tráfego e injetando comandos localmente.
+            try:
+                up = socket.create_connection(r.upstream, timeout=10)
+            except OSError as e:
+                print(f"[proxy] não conectou na nuvem {r.upstream}: {e} — seguindo só local")
+                up = None
+            r.up = up
+            threading.Thread(target=r.proxy_c2u, args=(conn, up, initial), daemon=True).start()
+            if up:
+                threading.Thread(target=r.proxy_u2c, args=(conn, up), daemon=True).start()
+        else:
+            threading.Thread(target=r.reader, args=(conn, initial), daemon=True).start()
+            threading.Thread(target=r.poller, args=(conn, ns.poll), daemon=True).start()
+
     def accept_loop():
         while True:
             conn, addr = srv.accept()
-            print(f"== central conectou de {addr}")
-            if not r.proxy:   # no híbrido quem consulta é a nuvem: sem timeout de ociosidade
-                conn.settimeout(max(IDLE_TIMEOUT_MIN, 4 * ns.poll))   # detecta conexão morta
-            conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            # reset de estado por conexão (a central reconecta sozinha no churn de WiFi):
-            # sem isso, buf/sessão/threads antigas vazam e dessincronizam.
-            with r.lock:
-                old, oldup = r.sock, r.up
-                r.sock = conn
-                r.buf = b""; r.tap_buf = b""; r.fwd_buf = b""
-                r.session_opened = False
-                r._last_status_key = None
-                r._pending_cmd = None
-                r.up = None
-                r._sess_code = None
-                r._sess_reset_done = False
-                r._reset_ok_logged = False
-            for s in (old, oldup):
-                if s:
-                    try: s.close()
-                    except OSError: pass
-            if r.mqtt: r.mqtt.set_available(True)
-            if r.proxy:
-                # abre a conexão com a nuvem real e vira um túnel central<->nuvem,
-                # tapeando o tráfego e injetando comandos localmente.
-                try:
-                    up = socket.create_connection(r.upstream, timeout=10)
-                except OSError as e:
-                    print(f"[proxy] não conectou na nuvem {r.upstream}: {e} — seguindo só local")
-                    up = None
-                r.up = up
-                threading.Thread(target=r.proxy_c2u, args=(conn, up), daemon=True).start()
-                if up:
-                    threading.Thread(target=r.proxy_u2c, args=(conn, up), daemon=True).start()
-            else:
-                threading.Thread(target=r.reader, args=(conn,), daemon=True).start()
-                threading.Thread(target=r.poller, args=(conn, ns.poll), daemon=True).start()
+            threading.Thread(target=identify, args=(conn, addr), daemon=True).start()
     threading.Thread(target=accept_loop, daemon=True).start()
 
     def shutdown(*_):

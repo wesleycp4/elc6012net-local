@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Mesma correção do App Local 1.1.1: conexões que não falam o protocolo da central
+  não derrubam mais a conexão dela.
+
 ## 0.2.0
 
 - Código incluído no App, a partir da branch `main` (a branch `experimental` deixou

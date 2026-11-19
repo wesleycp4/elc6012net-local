@@ -3,6 +3,13 @@
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 Versões dos Apps do Home Assistant entre parênteses.
 
+## 2026-11-19 — App Local 1.1.1, App Híbrido 0.2.1
+
+### Corrigido
+- Conexão nova na porta 9009 só substitui a da central depois de um frame válido do
+  protocolo; varreduras e verificações de saúde não derrubam mais a central.
+- Removida a verificação de porta do watchdog (1.1.0), que derrubava a central.
+
 ## 2026-11-19 — App Local 1.1.0, App Híbrido 0.2.0
 
 ### Alterado
