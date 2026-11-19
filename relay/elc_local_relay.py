@@ -29,6 +29,7 @@ def _ts_print(*a, **k):
     _print(datetime.now().strftime("%H:%M:%S"), *a, **k)
 
 
+SESSION_ACK_TIMEOUT = 3.0   # s esperando a central confirmar a reabertura de sessão
 IDLE_TIMEOUT_MIN = 60   # s sem receber nada da central => conexão considerada morta
 
 
@@ -130,6 +131,7 @@ class Relay:
         self.code = b""          # (não usado para a sessão de controle; ver open_session)
         self.session_open = bytes.fromhex(SESSION_OPEN_HEX)
         self.session_opened = False
+        self._sess_ack = threading.Event()   # setado quando a central confirma o f0f0
         self.SID = b"\x00\x00\x00\x01"  # índice de sessão deste relay
         self._pending_cmd = None        # (opcode, ts, retry) do comando, p/ detectar NACK
         self._last_control = None       # último payload de controle, p/ reenviar numa recusa
@@ -231,6 +233,8 @@ class Relay:
             print(f"[EVENTO] {frame[8:].hex(' ')}")
         elif c == "f0fd":
             self._on_f0fd(frame)
+        elif c == "f0f0" and frame[1] == self.inject_sid[3]:
+            self._sess_ack.set()            # confirmação da NOSSA sessão injetada
 
     def handle(self, frame: bytes, cmd: bytes):
         c = cmd.hex()
@@ -255,6 +259,9 @@ class Relay:
             self.send(b"\x00\x00\x00\x00", time_sync_payload())
             self.open_session()
         elif c == "f0f0":                    # confirmação de sessão (resposta da central)
+            if len(frame) >= 9 and frame[8] != 0x00:
+                print(f"[SESSAO] resposta com código 0x{frame[8]:02x}: {frame.hex(' ')}")
+            self._sess_ack.set()
             if not self.session_opened:      # só avisa na 1ª abertura (reaberturas por comando ficam quietas)
                 print("[SESSAO] aberta -> status e comandos liberados")
             self.session_opened = True
@@ -280,7 +287,7 @@ class Relay:
         if code == 0x00:
             return                          # ACK
         if op == "401e":                    # arme/desarme/choque: _verify confere pelo status
-            print(f"[RECUSADO] {op} code 0x{code:02x} — conferindo pelo status")
+            print(f"[RECUSADO] {op} code 0x{code:02x} ({frame.hex(' ')}) — conferindo pelo status")
             return
         if retry < 2 and self._last_control is not None:
             print(f"[RECUSADO] {op} code 0x{code:02x} — reabrindo e reenviando ({retry+1}/2)...")
@@ -390,9 +397,18 @@ class Relay:
             # No modo proxy os comandos vão numa sessão própria (inject_session) p/ não
             # brigar com a sessão da nuvem; no modo substituir usamos a nossa (1).
             sid = self.my_sid
+            self._sess_ack.clear()
             if not self.send(sid, self.session_open, quiet=True):        # reabre a sessão de controle
                 print("[!] comando não enviado: central desconectada"); return
-            time.sleep(0.15)                                      # deixa a central processar a reabertura
+            # espera a central confirmar a reabertura (f0 f0) antes do comando: com sinal
+            # Wi-Fi fraco a confirmação pode passar de 150 ms e o comando cai em 0x21.
+            t0 = time.time()
+            if self._sess_ack.wait(SESSION_ACK_TIMEOUT):
+                if time.time() - t0 > 0.5:
+                    print(f"[SESSAO] reabertura confirmada em {time.time() - t0:.1f}s")
+                time.sleep(0.05)
+            else:
+                print(f"[SESSAO] sem confirmação da reabertura em {SESSION_ACK_TIMEOUT:.0f}s — enviando mesmo assim")
             self._pending_cmd = (payload[:2].hex(), time.time(), _retry)
             if not self.send(sid, payload):                       # manda o comando
                 print("[!] comando não enviado: central desconectada"); return

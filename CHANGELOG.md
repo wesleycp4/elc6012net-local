@@ -3,6 +3,16 @@
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 Versões dos Apps do Home Assistant entre parênteses.
 
+## 2026-11-19 — App Local 1.0.3, App Híbrido 0.1.4
+
+### Corrigido
+- O comando passa a ser enviado só depois de a central confirmar a reabertura da
+  sessão (`f0 f0`), com até 3 s de espera, em vez de uma pausa fixa de 150 ms. Com
+  sinal Wi-Fi fraco, o comando chegava antes da sessão e era recusado com `0x21`.
+
+### Adicionado
+- Log do frame bruto nas recusas e do código de resposta da abertura de sessão.
+
 ## 2026-11-18 — App Local 1.0.2, App Híbrido 0.1.3
 
 ### Corrigido
