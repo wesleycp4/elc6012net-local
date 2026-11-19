@@ -111,7 +111,7 @@ Sequência ao conectar ✅:
    o status funciona mas todo comando é recusado com `0x21` ✅. Isso acontece quando a
    central reconecta **sem reiniciar** e a sessão da conexão anterior não foi encerrada
    (o relay caiu, a conexão foi resetada): a sessão antiga continua presa. Encerrar com
-   `f0 f1` na mesma sessão e reabrir com `f0 f0` devolve `00` 🟡. Por isso o relay
+   `f0 f1` na mesma sessão e reabrir com `f0 f0` devolve `00` ✅. Por isso o relay
    encerra a sessão (`f0 f1`) ao parar e, se receber código diferente de `00`, faz
    `f0 f1` + `f0 f0` uma vez por conexão.
 
